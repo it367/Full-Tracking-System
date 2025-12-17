@@ -540,14 +540,15 @@ export default function ClinicSystem() {
 
         <nav className="p-4 space-y-1">
           {MODULES.map(m => (
-            <button key={m.id} onClick={() => { setActiveModule(m.id); setAdminView('records'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left ${activeModule === m.id && adminView !== 'users' && adminView !== 'export' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+            <button key={m.id} onClick={() => { setActiveModule(m.id); setAdminView('records'); setView('entry'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left ${activeModule === m.id && adminView !== 'users' && adminView !== 'export' && adminView !== 'settings' && view !== 'export' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               <m.icon className="w-5 h-5" /><span className="text-sm font-medium">{m.name}</span>
             </button>
           ))}
           
-          {isAdmin && (
+          <div className="border-t my-3"></div>
+          
+          {isAdmin ? (
             <>
-              <div className="border-t my-3"></div>
               <button onClick={() => { setAdminView('users'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left ${adminView === 'users' ? 'bg-purple-50 text-purple-700' : 'text-gray-600 hover:bg-gray-50'}`}>
                 <Users className="w-5 h-5" /><span className="text-sm font-medium">Users</span>
               </button>
@@ -555,6 +556,10 @@ export default function ClinicSystem() {
                 <Download className="w-5 h-5" /><span className="text-sm font-medium">Export</span>
               </button>
             </>
+          ) : (
+            <button onClick={() => { setView('export'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left ${view === 'export' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+              <Download className="w-5 h-5" /><span className="text-sm font-medium">Export</span>
+            </button>
           )}
         </nav>
 
