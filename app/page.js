@@ -140,7 +140,7 @@ export default function ClinicSystem() {
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', locations: [] });
   
   // Admin Password
-  const [adminPwd, setAdminPwd] = useState(() => localStorage.getItem('admin-password') || DEFAULT_ADMIN_PASSWORD);
+  const [adminPwd, setAdminPwd] = useState(DEFAULT_ADMIN_PASSWORD);
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' });
   
   // Export State
@@ -177,6 +177,8 @@ export default function ClinicSystem() {
     loadUsers();
     const counter = localStorage.getItem('it-counter');
     if (counter) setItCounter(parseInt(counter));
+    const storedPwd = localStorage.getItem('admin-password');
+    if (storedPwd) setAdminPwd(storedPwd);
   }, []);
 
   const loadAllData = () => {
@@ -216,8 +218,7 @@ export default function ClinicSystem() {
   };
 
   const handleAdminLogin = () => {
-    const storedPwd = localStorage.getItem('admin-password') || DEFAULT_ADMIN_PASSWORD;
-    if (adminPassword === storedPwd) {
+    if (adminPassword === adminPwd) {
       setIsAdmin(true);
       setCurrentUser({ name: 'Admin', isAdmin: true });
     } else {
@@ -272,8 +273,7 @@ export default function ClinicSystem() {
   };
 
   const changeAdminPassword = () => {
-    const storedPwd = localStorage.getItem('admin-password') || DEFAULT_ADMIN_PASSWORD;
-    if (pwdForm.current !== storedPwd) {
+    if (pwdForm.current !== adminPwd) {
       setMessage('Current password is incorrect');
       setTimeout(() => setMessage(''), 3000);
       return;
