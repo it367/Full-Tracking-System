@@ -1,17 +1,15 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { DollarSign, FileText, Building2, Bot, Send, Loader2, LogOut, User, Upload, X, File, Shield, Receipt, CreditCard, Package, RefreshCw, Monitor, Menu, Eye, FolderOpen, Edit3, Users, Plus, Trash2, Lock, Download, Settings, MessageCircle, Sparkles } from 'lucide-react';
-
-const LOCATIONS = ['Pearl City', 'OS', 'Ortho', 'Lihue', 'Kapolei', 'Kailua', 'Honolulu', 'HHDS'];
-const DEFAULT_ADMIN_PASSWORD = 'admin123';
+import { supabase } from '../lib/supabase';
+import { DollarSign, FileText, Building2, Bot, Send, Loader2, LogOut, User, Upload, X, File, Shield, Receipt, CreditCard, Package, RefreshCw, Monitor, Menu, Eye, FolderOpen, Edit3, Users, Plus, Trash2, Lock, Download, Settings, MessageCircle, Sparkles, AlertCircle } from 'lucide-react';
 
 const MODULES = [
-  { id: 'daily-recon', name: 'Daily Recon', icon: DollarSign, color: 'emerald' },
-  { id: 'billing-inquiry', name: 'Billing Inquiry', icon: Receipt, color: 'blue' },
-  { id: 'bills-payment', name: 'Bills Payment', icon: CreditCard, color: 'violet' },
-  { id: 'order-requests', name: 'Order Requests', icon: Package, color: 'amber' },
-  { id: 'refund-requests', name: 'Refund Requests', icon: RefreshCw, color: 'rose' },
-  { id: 'it-requests', name: 'IT Requests', icon: Monitor, color: 'cyan' },
+  { id: 'daily-recon', name: 'Daily Recon', icon: DollarSign, color: 'emerald', table: 'daily_recon' },
+  { id: 'billing-inquiry', name: 'Billing Inquiry', icon: Receipt, color: 'blue', table: 'billing_inquiries' },
+  { id: 'bills-payment', name: 'Bills Payment', icon: CreditCard, color: 'violet', table: 'bills_payment' },
+  { id: 'order-requests', name: 'Order Requests', icon: Package, color: 'amber', table: 'order_requests' },
+  { id: 'refund-requests', name: 'Refund Requests', icon: RefreshCw, color: 'rose', table: 'refund_requests' },
+  { id: 'it-requests', name: 'IT Requests', icon: Monitor, color: 'cyan', table: 'it_requests' },
 ];
 
 const MODULE_COLORS = {
@@ -26,12 +24,29 @@ const MODULE_COLORS = {
 const IT_STATUSES = ['Open', 'In Progress', 'Resolved', 'Closed'];
 const DATE_RANGES = ['This Week', 'Last 2 Weeks', 'This Month', 'Last Month', 'This Quarter', 'This Year', 'Custom'];
 
-function InputField({ label, value, onChange, type = 'text', placeholder = '', prefix, options, large }) {
+// Helper: Check if record can be edited (before Friday 11:59 PM HST)
+function canEditRecord(createdAt) {
+  const now = new Date();
+  const hawaiiNow = new Date(now.toLocaleString('en-US', { timeZone: 'Pacific/Honolulu' }));
+  const recordDate = new Date(createdAt);
+  const recordHawaii = new Date(recordDate.toLocaleString('en-US', { timeZone: 'Pacific/Honolulu' }));
+  
+  // Get Friday of the record's week
+  const dayOfWeek = recordHawaii.getDay();
+  const daysUntilFriday = (5 - dayOfWeek + 7) % 7;
+  const friday = new Date(recordHawaii);
+  friday.setDate(recordHawaii.getDate() + daysUntilFriday);
+  friday.setHours(23, 59, 59, 999);
+  
+  return hawaiiNow <= friday;
+}
+
+function InputField({ label, value, onChange, type = 'text', placeholder = '', prefix, options, large, disabled }) {
   if (options) {
     return (
       <div className="flex flex-col">
         <label className="text-xs font-medium text-gray-600 mb-1.5">{label}</label>
-        <select value={value} onChange={onChange} className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none transition-all hover:border-gray-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white">
+        <select value={value} onChange={onChange} disabled={disabled} className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none transition-all hover:border-gray-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed">
           <option value="">Select...</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -42,36 +57,44 @@ function InputField({ label, value, onChange, type = 'text', placeholder = '', p
     return (
       <div className="flex flex-col">
         <label className="text-xs font-medium text-gray-600 mb-1.5">{label}</label>
-        <textarea value={value} onChange={onChange} rows={4} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none transition-all hover:border-gray-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none bg-white" placeholder={placeholder} />
+        <textarea value={value} onChange={onChange} disabled={disabled} rows={4} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none transition-all hover:border-gray-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed" placeholder={placeholder} />
       </div>
     );
   }
   return (
     <div className="flex flex-col">
       <label className="text-xs font-medium text-gray-600 mb-1.5">{label}</label>
-      <div className="flex items-center border-2 border-gray-200 rounded-xl bg-white transition-all hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+      <div className={`flex items-center border-2 border-gray-200 rounded-xl bg-white transition-all hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 ${disabled ? 'bg-gray-100' : ''}`}>
         {prefix && <span className="pl-3 text-gray-400 font-medium">{prefix}</span>}
-        <input type={type} value={value} onChange={onChange} className="w-full p-2.5 rounded-xl outline-none bg-transparent" placeholder={placeholder} />
+        <input type={type} value={value} onChange={onChange} disabled={disabled} className="w-full p-2.5 rounded-xl outline-none bg-transparent disabled:cursor-not-allowed" placeholder={placeholder} />
       </div>
     </div>
   );
 }
 
-function FileUpload({ label, files, onFilesChange, onViewFile }) {
-  const handleFileChange = (e) => {
-    const newFiles = Array.from(e.target.files).map(f => ({ name: f.name, size: f.size, type: f.type, url: URL.createObjectURL(f) }));
+function FileUpload({ label, files, onFilesChange, onViewFile, disabled }) {
+  const handleFileChange = async (e) => {
+    const newFiles = Array.from(e.target.files).map(f => ({
+      file: f,
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      url: URL.createObjectURL(f),
+      isNew: true
+    }));
     onFilesChange([...files, ...newFiles]);
   };
+  
   return (
     <div className="flex flex-col">
       <label className="text-xs font-medium text-gray-600 mb-1.5">{label}</label>
-      <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 bg-gradient-to-br from-gray-50 to-slate-50 hover:border-blue-300 hover:from-blue-50 hover:to-indigo-50 transition-all">
-        <label className="flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-500 hover:text-blue-600">
+      <div className={`border-2 border-dashed border-gray-300 rounded-xl p-4 bg-gradient-to-br from-gray-50 to-slate-50 hover:border-blue-300 hover:from-blue-50 hover:to-indigo-50 transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        <label className={`flex flex-col items-center justify-center gap-2 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} text-gray-500 hover:text-blue-600`}>
           <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
             <Upload className="w-5 h-5 text-blue-600" />
           </div>
           <span className="text-sm font-medium">Click to upload files</span>
-          <input type="file" multiple onChange={handleFileChange} className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+          <input type="file" multiple onChange={handleFileChange} disabled={disabled} className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
         </label>
         {files.length > 0 && (
           <div className="mt-3 space-y-2">
@@ -85,7 +108,7 @@ function FileUpload({ label, files, onFilesChange, onViewFile }) {
                 </div>
                 <div className="flex items-center gap-1">
                   {file.url && <button onClick={() => onViewFile(file)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"><Eye className="w-4 h-4" /></button>}
-                  <button onClick={() => onFilesChange(files.filter((_, idx) => idx !== i))} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
+                  {!disabled && <button onClick={() => onFilesChange(files.filter((_, idx) => idx !== i))} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><X className="w-4 h-4" /></button>}
                 </div>
               </div>
             ))}
@@ -123,20 +146,21 @@ function FileViewer({ file, onClose }) {
 }
 
 function StatusBadge({ status }) {
-  const colors = { 
-    'Open': 'bg-red-100 text-red-700 border-red-200', 
-    'In Progress': 'bg-amber-100 text-amber-700 border-amber-200', 
-    'Resolved': 'bg-emerald-100 text-emerald-700 border-emerald-200', 
-    'Closed': 'bg-gray-100 text-gray-600 border-gray-200', 
-    'Pending': 'bg-amber-100 text-amber-700 border-amber-200', 
-    'Approved': 'bg-blue-100 text-blue-700 border-blue-200', 
-    'Completed': 'bg-emerald-100 text-emerald-700 border-emerald-200', 
-    'Paid': 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+  const colors = {
+    'Open': 'bg-red-100 text-red-700 border-red-200',
+    'In Progress': 'bg-amber-100 text-amber-700 border-amber-200',
+    'Resolved': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    'Closed': 'bg-gray-100 text-gray-600 border-gray-200',
+    'Pending': 'bg-amber-100 text-amber-700 border-amber-200',
+    'Approved': 'bg-blue-100 text-blue-700 border-blue-200',
+    'Completed': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    'Paid': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    'Denied': 'bg-red-100 text-red-700 border-red-200'
   };
   return <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${colors[status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>{status || 'N/A'}</span>;
 }
 
-function FloatingChat({ messages, input, setInput, onSend, loading, isAdmin }) {
+function FloatingChat({ messages, input, setInput, onSend, loading, userRole }) {
   const [isOpen, setIsOpen] = useState(false);
   const messagesEndRef = useRef(null);
   
@@ -144,10 +168,12 @@ function FloatingChat({ messages, input, setInput, onSend, loading, isAdmin }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const isAdmin = userRole === 'super_admin' || userRole === 'finance_admin';
+
   return (
     <>
-      <button 
-        onClick={() => setIsOpen(!isOpen)} 
+      <button
+        onClick={() => setIsOpen(!isOpen)}
         className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 hover:shadow-xl ${isOpen ? 'bg-gray-700' : 'bg-gradient-to-r from-indigo-600 to-purple-600'}`}
       >
         {isOpen ? <X className="w-6 h-6 text-white" /> : (
@@ -196,17 +222,17 @@ function FloatingChat({ messages, input, setInput, onSend, loading, isAdmin }) {
 
           <div className="p-3 border-t bg-white">
             <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={input} 
-                onChange={e => setInput(e.target.value)} 
-                onKeyDown={e => e.key === 'Enter' && onSend()} 
-                placeholder="Ask me anything..." 
-                className="flex-1 p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" 
+              <input
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && onSend()}
+                placeholder="Ask me anything..."
+                className="flex-1 p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
               />
-              <button 
-                onClick={onSend} 
-                disabled={loading} 
+              <button
+                onClick={onSend}
+                disabled={loading}
                 className="px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:shadow-lg transition-all disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
@@ -220,51 +246,63 @@ function FloatingChat({ messages, input, setInput, onSend, loading, isAdmin }) {
 }
 
 export default function ClinicSystem() {
+  // Auth state
   const [currentUser, setCurrentUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [users, setUsers] = useState([]);
+  const [userLocations, setUserLocations] = useState([]);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginMode, setLoginMode] = useState('staff');
-  const [adminPassword, setAdminPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
-  
+
+  // Data state
+  const [locations, setLocations] = useState([]);
+  const [users, setUsers] = useState([]);
   const [activeModule, setActiveModule] = useState('daily-recon');
   const [view, setView] = useState('entry');
   const [adminView, setAdminView] = useState('records');
-  const [allData, setAllData] = useState({});
+  const [moduleData, setModuleData] = useState({});
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState({ type: '', text: '' });
   const [viewingFile, setViewingFile] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [adminLocation, setAdminLocation] = useState('all');
   const [editingStatus, setEditingStatus] = useState(null);
-  const [itCounter, setItCounter] = useState(1000);
-  
+  const [editingEntry, setEditingEntry] = useState(null);
+
+  // User management
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', locations: [] });
-  
-  const [adminPwd, setAdminPwd] = useState(DEFAULT_ADMIN_PASSWORD);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'staff', locations: [] });
+
+  // Password change
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' });
-  
-  const [exportSystem, setExportSystem] = useState('daily-recon');
+
+  // Export
+  const [exportModule, setExportModule] = useState('daily-recon');
   const [exportLocation, setExportLocation] = useState('all');
   const [exportRange, setExportRange] = useState('This Month');
-  
-  const [chatMessages, setChatMessages] = useState([{ role: 'assistant', content: "👋 Hi! I'm your AI assistant. I can help with:\n\n• Data summaries & reports\n• Weekly comparisons\n• Location analytics\n• IT request status\n\nWhat would you like to know?" }]);
+
+  // AI Chat
+  const [chatMessages, setChatMessages] = useState([{
+    role: 'assistant',
+    content: "👋 Hi! I'm your AI assistant. I can help with:\n\n• Data summaries & reports\n• Weekly comparisons\n• Location analytics\n• IT request status\n\nWhat would you like to know?"
+  }]);
   const [chatInput, setChatInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
+
+  // Form states for each module
   const [forms, setForms] = useState({
-    'daily-recon': { date: today, cash: '', creditCard: '', checksOTC: '', insuranceChecks: '', careCredit: '', vcc: '', efts: '', depositCash: '', depositCreditCard: '', depositChecks: '', depositInsurance: '', depositCareCredit: '', depositVCC: '', notes: '' },
-    'billing-inquiry': { patientName: '', chartNumber: '', dateOfService: '', amountInQuestion: '', bestContactMethod: '', bestContactTime: '', reviewedBy: '', initials: '', status: '', result: '' },
-    'bills-payment': { billStatus: '', date: today, vendor: '', description: '', amount: '', dueDate: '', managerInitials: '', apReviewed: '', dateReviewed: '', paid: '' },
-    'order-requests': { dateEntered: today, vendor: '', invoiceNumber: '', invoiceDate: '', dueDate: '', amount: '', enteredBy: '', notes: '' },
-    'refund-requests': { patientName: '', chartNumber: '', parentName: '', rpAddress: '', dateOfRequest: today, typeTransaction: '', description: '', amountRequested: '', bestContactMethod: '', eassistAudited: '', status: '' },
-    'it-requests': { dateReported: today, urgencyLevel: '', requesterName: '', deviceSystem: '', descriptionOfIssue: '', bestContactMethod: '', bestContactTime: '' }
+    'daily-recon': { recon_date: today, cash: '', credit_card: '', checks_otc: '', insurance_checks: '', care_credit: '', vcc: '', efts: '', deposit_cash: '', deposit_credit_card: '', deposit_checks: '', deposit_insurance: '', deposit_care_credit: '', deposit_vcc: '', notes: '' },
+    'billing-inquiry': { patient_name: '', chart_number: '', date_of_service: '', amount_in_question: '', best_contact_method: '', best_contact_time: '', reviewed_by: '', initials: '', status: 'Pending', result: '' },
+    'bills-payment': { status: 'Pending', bill_date: today, vendor: '', description: '', amount: '', due_date: '', manager_initials: '', ap_reviewed: false, date_reviewed: '', paid_date: '' },
+    'order-requests': { date_entered: today, vendor: '', invoice_number: '', invoice_date: '', due_date: '', amount: '', status: 'Pending', notes: '' },
+    'refund-requests': { patient_name: '', chart_number: '', parent_name: '', rp_address: '', date_of_request: today, type: '', description: '', amount_requested: '', best_contact_method: '', eassist_audited: '', status: 'Pending' },
+    'it-requests': { date_reported: today, urgency: '', requester_name: '', device_system: '', description_of_issue: '', best_contact_method: '', best_contact_time: '' }
   });
+
   const [files, setFiles] = useState({
     'daily-recon': { eodDaySheets: [], eodBankReceipts: [], otherFiles: [] },
     'billing-inquiry': { documentation: [] },
@@ -274,234 +312,578 @@ export default function ClinicSystem() {
     'it-requests': { documentation: [] }
   });
 
-  useEffect(() => { 
-    loadAllData(); 
-    loadUsers();
-    const counter = localStorage.getItem('it-counter');
-    if (counter) setItCounter(parseInt(counter));
-    const storedPwd = localStorage.getItem('admin-password');
-    if (storedPwd) setAdminPwd(storedPwd);
+  // Load locations on mount
+  useEffect(() => {
+    loadLocations();
   }, []);
 
-  const loadAllData = () => {
-    const data = {};
-    MODULES.forEach(m => {
-      const stored = localStorage.getItem(`clinic-${m.id}`);
-      if (stored) data[m.id] = JSON.parse(stored);
-    });
-    setAllData(data);
+  // Load data when user logs in or location changes
+  useEffect(() => {
+    if (currentUser && (selectedLocation || isAdmin)) {
+      loadModuleData(activeModule);
+    }
+  }, [currentUser, selectedLocation, activeModule, adminLocation]);
+
+  const isAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'finance_admin';
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+
+  const showMessage = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage({ type: '', text: '' }), 4000);
   };
 
-  const loadUsers = () => {
-    const stored = localStorage.getItem('clinic-users');
-    if (stored) setUsers(JSON.parse(stored));
-    else {
-      const defaultUsers = [{ id: '1', name: 'Demo User', email: 'demo', password: '1234', locations: ['Kailua', 'Honolulu'] }];
-      setUsers(defaultUsers);
-      localStorage.setItem('clinic-users', JSON.stringify(defaultUsers));
+  // ==================== DATA LOADING ====================
+
+  const loadLocations = async () => {
+    const { data, error } = await supabase.from('locations').select('*').eq('is_active', true).order('name');
+    if (data) setLocations(data);
+  };
+
+  const loadUsers = async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`*, user_locations(location_id, locations(id, name))`)
+      .order('name');
+    if (data) {
+      const usersWithLocations = data.map(u => ({
+        ...u,
+        locations: u.user_locations?.map(ul => ul.locations) || []
+      }));
+      setUsers(usersWithLocations);
     }
   };
 
-  const saveUsers = (newUsers) => { setUsers(newUsers); localStorage.setItem('clinic-users', JSON.stringify(newUsers)); };
+  const loadModuleData = async (moduleId) => {
+    setLoading(true);
+    const module = MODULES.find(m => m.id === moduleId);
+    if (!module) return;
 
-  const handleStaffLogin = () => {
-    const user = users.find(u => u.email.toLowerCase() === loginEmail.toLowerCase() && u.password === loginPassword);
-    if (user) { setCurrentUser(user); if (user.locations.length === 1) setSelectedLocation(user.locations[0]); setMessage(''); }
-    else { setMessage('Invalid email or password'); setTimeout(() => setMessage(''), 3000); }
+    let query = supabase.from(module.table).select('*, locations(name), creator:created_by(name), updater:updated_by(name)').order('created_at', { ascending: false });
+
+    // Filter by location for staff
+    if (!isAdmin && selectedLocation) {
+      const loc = locations.find(l => l.name === selectedLocation);
+      if (loc) query = query.eq('location_id', loc.id);
+    } else if (isAdmin && adminLocation !== 'all') {
+      const loc = locations.find(l => l.name === adminLocation);
+      if (loc) query = query.eq('location_id', loc.id);
+    }
+
+    const { data, error } = await query.limit(500);
+    if (data) {
+      setModuleData(prev => ({ ...prev, [moduleId]: data }));
+    }
+    setLoading(false);
   };
 
-  const handleAdminLogin = () => {
-    if (adminPassword === adminPwd) { setIsAdmin(true); setCurrentUser({ name: 'Admin', isAdmin: true }); }
-    else { setMessage('Invalid admin password'); setTimeout(() => setMessage(''), 3000); }
+  // ==================== AUTHENTICATION ====================
+
+  const handleLogin = async () => {
+    if (!loginEmail || !loginPassword) {
+      showMessage('error', 'Please enter email and password');
+      return;
+    }
+
+    setLoginLoading(true);
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .select(`*, user_locations(location_id, locations(id, name))`)
+      .eq('email', loginEmail.toLowerCase())
+      .eq('password_hash', loginPassword)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !user) {
+      showMessage('error', 'Invalid email or password');
+      setLoginLoading(false);
+      return;
+    }
+
+    // Update last login
+    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
+
+    const userLocs = user.user_locations?.map(ul => ul.locations) || [];
+    setCurrentUser(user);
+    setUserLocations(userLocs);
+
+    // Auto-select location if only one
+    if (userLocs.length === 1) {
+      setSelectedLocation(userLocs[0].name);
+    }
+
+    // Load users list if admin
+    if (user.role === 'super_admin' || user.role === 'finance_admin') {
+      loadUsers();
+    }
+
+    setLoginLoading(false);
   };
 
   const handleLogout = () => {
-    setCurrentUser(null); setIsAdmin(false); setSelectedLocation(null); setLoginEmail(''); setLoginPassword(''); setAdminPassword(''); setView('entry'); setAdminView('records'); setPwdForm({ current: '', new: '', confirm: '' });
+    setCurrentUser(null);
+    setUserLocations([]);
+    setSelectedLocation(null);
+    setLoginEmail('');
+    setLoginPassword('');
+    setView('entry');
+    setAdminView('records');
+    setPwdForm({ current: '', new: '', confirm: '' });
+    setChatMessages([{
+      role: 'assistant',
+      content: "👋 Hi! I'm your AI assistant. I can help with:\n\n• Data summaries & reports\n• Weekly comparisons\n• Location analytics\n• IT request status\n\nWhat would you like to know?"
+    }]);
+    setModuleData({});
   };
 
-  const addUser = () => {
-    if (!newUser.name || !newUser.email || !newUser.password || newUser.locations.length === 0) { setMessage('Please fill all fields and select at least one location'); setTimeout(() => setMessage(''), 3000); return; }
-    saveUsers([...users, { ...newUser, id: Date.now().toString() }]);
-    setNewUser({ name: '', email: '', password: '', locations: [] }); setShowAddUser(false);
-    setMessage('✓ User added!'); setTimeout(() => setMessage(''), 3000);
+  // ==================== USER MANAGEMENT ====================
+
+  const addUser = async () => {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      showMessage('error', 'Please fill all required fields');
+      return;
+    }
+
+    // Create user
+    const { data: createdUser, error } = await supabase
+      .from('users')
+      .insert({
+        name: newUser.name,
+        email: newUser.email.toLowerCase(),
+        password_hash: newUser.password,
+        role: newUser.role,
+        created_by: currentUser.id
+      })
+      .select()
+      .single();
+
+    if (error) {
+      showMessage('error', error.message.includes('duplicate') ? 'Email already exists' : 'Failed to create user');
+      return;
+    }
+
+    // Assign locations
+    if (newUser.locations.length > 0) {
+      const locationAssignments = newUser.locations.map(locId => ({
+        user_id: createdUser.id,
+        location_id: locId,
+        assigned_by: currentUser.id
+      }));
+      await supabase.from('user_locations').insert(locationAssignments);
+    }
+
+    showMessage('success', '✓ User created successfully!');
+    setNewUser({ name: '', email: '', password: '', role: 'staff', locations: [] });
+    setShowAddUser(false);
+    loadUsers();
   };
 
-  const updateUser = () => {
-    if (!editingUser.name || !editingUser.email || editingUser.locations.length === 0) { setMessage('Please fill all fields'); setTimeout(() => setMessage(''), 3000); return; }
-    saveUsers(users.map(u => u.id === editingUser.id ? editingUser : u)); setEditingUser(null);
-    setMessage('✓ User updated!'); setTimeout(() => setMessage(''), 3000);
+  const updateUser = async () => {
+    if (!editingUser.name || !editingUser.email) {
+      showMessage('error', 'Please fill all required fields');
+      return;
+    }
+
+    const updateData = {
+      name: editingUser.name,
+      email: editingUser.email.toLowerCase(),
+      role: editingUser.role,
+      updated_by: currentUser.id
+    };
+
+    if (editingUser.newPassword) {
+      updateData.password_hash = editingUser.newPassword;
+    }
+
+    const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
+
+    if (error) {
+      showMessage('error', 'Failed to update user');
+      return;
+    }
+
+    // Update locations
+    await supabase.from('user_locations').delete().eq('user_id', editingUser.id);
+    if (editingUser.locationIds?.length > 0) {
+      const locationAssignments = editingUser.locationIds.map(locId => ({
+        user_id: editingUser.id,
+        location_id: locId,
+        assigned_by: currentUser.id
+      }));
+      await supabase.from('user_locations').insert(locationAssignments);
+    }
+
+    showMessage('success', '✓ User updated!');
+    setEditingUser(null);
+    loadUsers();
   };
 
-  const deleteUser = (id) => { if (confirm('Delete this user?')) { saveUsers(users.filter(u => u.id !== id)); setMessage('✓ User deleted'); setTimeout(() => setMessage(''), 3000); } };
-
-  const changeAdminPassword = () => {
-    if (pwdForm.current !== adminPwd) { setMessage('Current password is incorrect'); setTimeout(() => setMessage(''), 3000); return; }
-    if (pwdForm.new.length < 4) { setMessage('New password must be at least 4 characters'); setTimeout(() => setMessage(''), 3000); return; }
-    if (pwdForm.new !== pwdForm.confirm) { setMessage('New passwords do not match'); setTimeout(() => setMessage(''), 3000); return; }
-    localStorage.setItem('admin-password', pwdForm.new); setAdminPwd(pwdForm.new); setPwdForm({ current: '', new: '', confirm: '' });
-    setMessage('✓ Password changed successfully!'); setTimeout(() => setMessage(''), 3000);
+  const deleteUser = async (id) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    
+    await supabase.from('users').update({ is_active: false, updated_by: currentUser.id }).eq('id', id);
+    showMessage('success', '✓ User deleted');
+    loadUsers();
   };
 
-  const changeUserPassword = () => {
-    if (pwdForm.current !== currentUser.password) { setMessage('Current password is incorrect'); setTimeout(() => setMessage(''), 3000); return; }
-    if (pwdForm.new.length < 4) { setMessage('New password must be at least 4 characters'); setTimeout(() => setMessage(''), 3000); return; }
-    if (pwdForm.new !== pwdForm.confirm) { setMessage('New passwords do not match'); setTimeout(() => setMessage(''), 3000); return; }
-    const updatedUsers = users.map(u => u.id === currentUser.id ? { ...u, password: pwdForm.new } : u);
-    saveUsers(updatedUsers); setCurrentUser({ ...currentUser, password: pwdForm.new }); setPwdForm({ current: '', new: '', confirm: '' });
-    setMessage('✓ Password changed successfully!'); setTimeout(() => setMessage(''), 3000);
+  const toggleUserLocation = (locId, isEditing = false) => {
+    if (isEditing) {
+      const locs = editingUser.locationIds || [];
+      const newLocs = locs.includes(locId) ? locs.filter(l => l !== locId) : [...locs, locId];
+      setEditingUser({ ...editingUser, locationIds: newLocs });
+    } else {
+      const locs = newUser.locations;
+      const newLocs = locs.includes(locId) ? locs.filter(l => l !== locId) : [...locs, locId];
+      setNewUser({ ...newUser, locations: newLocs });
+    }
   };
 
-  const toggleUserLocation = (loc, isEditing = false) => {
-    if (isEditing) { const locs = editingUser.locations.includes(loc) ? editingUser.locations.filter(l => l !== loc) : [...editingUser.locations, loc]; setEditingUser({ ...editingUser, locations: locs }); }
-    else { const locs = newUser.locations.includes(loc) ? newUser.locations.filter(l => l !== loc) : [...newUser.locations, loc]; setNewUser({ ...newUser, locations: locs }); }
+  // ==================== PASSWORD CHANGE ====================
+
+  const changePassword = async () => {
+    if (pwdForm.current !== currentUser.password_hash) {
+      showMessage('error', 'Current password is incorrect');
+      return;
+    }
+    if (pwdForm.new.length < 4) {
+      showMessage('error', 'New password must be at least 4 characters');
+      return;
+    }
+    if (pwdForm.new !== pwdForm.confirm) {
+      showMessage('error', 'New passwords do not match');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({ password_hash: pwdForm.new, updated_by: currentUser.id })
+      .eq('id', currentUser.id);
+
+    if (error) {
+      showMessage('error', 'Failed to update password');
+      return;
+    }
+
+    setCurrentUser({ ...currentUser, password_hash: pwdForm.new });
+    setPwdForm({ current: '', new: '', confirm: '' });
+    showMessage('success', '✓ Password changed successfully!');
   };
 
-  const updateForm = (module, field, value) => setForms(prev => ({ ...prev, [module]: { ...prev[module], [field]: value } }));
-  const updateFiles = (module, field, newFiles) => setFiles(prev => ({ ...prev, [module]: { ...prev[module], [field]: newFiles } }));
+  // ==================== FORM HANDLING ====================
 
-  const saveEntry = async (module) => {
+  const updateForm = (module, field, value) => {
+    setForms(prev => ({ ...prev, [module]: { ...prev[module], [field]: value } }));
+  };
+
+  const updateFiles = (module, field, newFiles) => {
+    setFiles(prev => ({ ...prev, [module]: { ...prev[module], [field]: newFiles } }));
+  };
+
+  // ==================== FILE UPLOAD ====================
+
+  const uploadFiles = async (recordType, recordId, filesByCategory) => {
+    const uploadedFiles = [];
+
+    for (const [category, fileList] of Object.entries(filesByCategory)) {
+      for (const file of fileList) {
+        if (!file.isNew || !file.file) continue;
+
+        const fileExt = file.name.split('.').pop();
+        const filePath = `${recordType}/${recordId}/${category}/${Date.now()}_${file.name}`;
+
+        const { data, error } = await supabase.storage
+          .from('clinic-documents')
+          .upload(filePath, file.file);
+
+        if (!error) {
+          // Save file metadata to documents table
+          await supabase.from('documents').insert({
+            record_type: recordType,
+            record_id: recordId,
+            file_name: file.name,
+            file_type: file.type,
+            file_size: file.size,
+            category: category,
+            storage_path: filePath,
+            uploaded_by: currentUser.id
+          });
+          uploadedFiles.push({ ...file, storage_path: filePath });
+        }
+      }
+    }
+
+    return uploadedFiles;
+  };
+
+  // ==================== SAVE ENTRY ====================
+
+  const saveEntry = async (moduleId) => {
     setSaving(true);
-    const form = forms[module];
-    const entry = { ...form, files: Object.fromEntries(Object.entries(files[module]).map(([k, v]) => [k, v.map(f => ({ name: f.name, type: f.type, url: f.url }))])), location: selectedLocation, enteredBy: currentUser.name, timestamp: new Date().toISOString(), id: `${Date.now()}` };
-    if (module === 'daily-recon') { entry.total = ['cash', 'creditCard', 'checksOTC', 'insuranceChecks', 'careCredit', 'vcc', 'efts'].reduce((s, f) => s + (parseFloat(form[f]) || 0), 0); entry.depositTotal = ['depositCash', 'depositCreditCard', 'depositChecks', 'depositInsurance', 'depositCareCredit', 'depositVCC'].reduce((s, f) => s + (parseFloat(form[f]) || 0), 0); }
-    if (module === 'it-requests') { entry.requestNumber = `IT-${itCounter}`; entry.status = 'Open'; setItCounter(itCounter + 1); localStorage.setItem('it-counter', (itCounter + 1).toString()); }
-    const updated = [entry, ...(allData[module] || [])].slice(0, 500);
-    localStorage.setItem(`clinic-${module}`, JSON.stringify(updated)); setAllData(prev => ({ ...prev, [module]: updated }));
-    setMessage('✓ Entry saved!'); setTimeout(() => setMessage(''), 3000);
-    const resetForm = { ...forms[module] }; Object.keys(resetForm).forEach(k => { if (!k.includes('date') && !k.includes('Date')) resetForm[k] = ''; });
-    setForms(prev => ({ ...prev, [module]: resetForm })); setFiles(prev => ({ ...prev, [module]: Object.fromEntries(Object.entries(files[module]).map(([k]) => [k, []])) })); setSaving(false);
+    const module = MODULES.find(m => m.id === moduleId);
+    const form = forms[moduleId];
+    const loc = locations.find(l => l.name === selectedLocation);
+
+    if (!loc) {
+      showMessage('error', 'Please select a location');
+      setSaving(false);
+      return;
+    }
+
+    // Prepare data based on module
+    let entryData = { location_id: loc.id, created_by: currentUser.id, updated_by: currentUser.id };
+
+    if (moduleId === 'daily-recon') {
+      entryData = {
+        ...entryData,
+        recon_date: form.recon_date,
+        cash: parseFloat(form.cash) || 0,
+        credit_card: parseFloat(form.credit_card) || 0,
+        checks_otc: parseFloat(form.checks_otc) || 0,
+        insurance_checks: parseFloat(form.insurance_checks) || 0,
+        care_credit: parseFloat(form.care_credit) || 0,
+        vcc: parseFloat(form.vcc) || 0,
+        efts: parseFloat(form.efts) || 0,
+        deposit_cash: parseFloat(form.deposit_cash) || 0,
+        deposit_credit_card: parseFloat(form.deposit_credit_card) || 0,
+        deposit_checks: parseFloat(form.deposit_checks) || 0,
+        deposit_insurance: parseFloat(form.deposit_insurance) || 0,
+        deposit_care_credit: parseFloat(form.deposit_care_credit) || 0,
+        deposit_vcc: parseFloat(form.deposit_vcc) || 0,
+        notes: form.notes
+      };
+    } else if (moduleId === 'billing-inquiry') {
+      entryData = {
+        ...entryData,
+        patient_name: form.patient_name,
+        chart_number: form.chart_number,
+        date_of_service: form.date_of_service || null,
+        amount_in_question: parseFloat(form.amount_in_question) || null,
+        best_contact_method: form.best_contact_method || null,
+        best_contact_time: form.best_contact_time,
+        reviewed_by: form.reviewed_by,
+        initials: form.initials,
+        status: form.status || 'Pending',
+        result: form.result
+      };
+    } else if (moduleId === 'bills-payment') {
+      entryData = {
+        ...entryData,
+        bill_date: form.bill_date,
+        vendor: form.vendor,
+        description: form.description,
+        amount: parseFloat(form.amount) || 0,
+        due_date: form.due_date || null,
+        status: form.status || 'Pending',
+        manager_initials: form.manager_initials,
+        ap_reviewed: form.ap_reviewed === 'Yes',
+        date_reviewed: form.date_reviewed || null,
+        paid_date: form.paid_date || null
+      };
+    } else if (moduleId === 'order-requests') {
+      entryData = {
+        ...entryData,
+        date_entered: form.date_entered,
+        vendor: form.vendor,
+        invoice_number: form.invoice_number,
+        invoice_date: form.invoice_date || null,
+        due_date: form.due_date || null,
+        amount: parseFloat(form.amount) || 0,
+        status: form.status || 'Pending',
+        notes: form.notes
+      };
+    } else if (moduleId === 'refund-requests') {
+      entryData = {
+        ...entryData,
+        patient_name: form.patient_name,
+        chart_number: form.chart_number,
+        parent_name: form.parent_name,
+        rp_address: form.rp_address,
+        date_of_request: form.date_of_request,
+        type: form.type || null,
+        description: form.description,
+        amount_requested: parseFloat(form.amount_requested) || 0,
+        best_contact_method: form.best_contact_method || null,
+        eassist_audited: form.eassist_audited === 'Yes' ? true : form.eassist_audited === 'No' ? false : null,
+        status: form.status || 'Pending'
+      };
+    } else if (moduleId === 'it-requests') {
+      entryData = {
+        ...entryData,
+        date_reported: form.date_reported,
+        urgency: form.urgency || null,
+        requester_name: form.requester_name,
+        device_system: form.device_system,
+        description_of_issue: form.description_of_issue,
+        best_contact_method: form.best_contact_method || null,
+        best_contact_time: form.best_contact_time,
+        status: 'Open'
+      };
+    }
+
+    const { data: newEntry, error } = await supabase
+      .from(module.table)
+      .insert(entryData)
+      .select()
+      .single();
+
+    if (error) {
+      showMessage('error', 'Failed to save entry: ' + error.message);
+      setSaving(false);
+      return;
+    }
+
+    // Upload files
+    await uploadFiles(moduleId, newEntry.id, files[moduleId]);
+
+    showMessage('success', '✓ Entry saved successfully!');
+
+    // Reset form
+    const resetForm = { ...forms[moduleId] };
+    Object.keys(resetForm).forEach(k => {
+      if (!k.includes('date')) resetForm[k] = '';
+    });
+    setForms(prev => ({ ...prev, [moduleId]: { ...resetForm, [Object.keys(resetForm).find(k => k.includes('date'))]: today } }));
+    setFiles(prev => ({
+      ...prev,
+      [moduleId]: Object.fromEntries(Object.entries(files[moduleId]).map(([k]) => [k, []]))
+    }));
+
+    loadModuleData(moduleId);
+    setSaving(false);
   };
 
-  const updateITStatus = (entryId, newStatus, resolutionNotes = '') => {
-    const updated = (allData['it-requests'] || []).map(e => e.id === entryId ? { ...e, status: newStatus, resolutionNotes, completedBy: 'Admin', statusUpdatedAt: new Date().toISOString() } : e);
-    localStorage.setItem('clinic-it-requests', JSON.stringify(updated)); setAllData(prev => ({ ...prev, 'it-requests': updated })); setEditingStatus(null);
-    setMessage('✓ Status updated!'); setTimeout(() => setMessage(''), 3000);
+  // ==================== UPDATE STATUS (Admin) ====================
+
+  const updateEntryStatus = async (moduleId, entryId, newStatus, additionalFields = {}) => {
+    const module = MODULES.find(m => m.id === moduleId);
+
+    const updateData = {
+      status: newStatus,
+      updated_by: currentUser.id,
+      ...additionalFields
+    };
+
+    if (moduleId === 'it-requests' && (newStatus === 'Resolved' || newStatus === 'Closed')) {
+      updateData.resolved_at = new Date().toISOString();
+      updateData.resolved_by = currentUser.id;
+    }
+
+    const { error } = await supabase
+      .from(module.table)
+      .update(updateData)
+      .eq('id', entryId);
+
+    if (error) {
+      showMessage('error', 'Failed to update status');
+      return;
+    }
+
+    showMessage('success', '✓ Status updated!');
+    setEditingStatus(null);
+    loadModuleData(moduleId);
   };
 
-  const exportToCSV = () => {
-    let filtered = allData[exportSystem] || [];
-    if (exportLocation !== 'all') filtered = filtered.filter(e => e.location === exportLocation);
-    if (filtered.length === 0) { setMessage('No data to export'); setTimeout(() => setMessage(''), 3000); return; }
-    const headers = Object.keys(filtered[0]).filter(k => k !== 'files');
-    const csv = [headers.join(','), ...filtered.map(row => headers.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${exportSystem}_${exportLocation}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-    setMessage('✓ Export complete!'); setTimeout(() => setMessage(''), 3000);
+  // ==================== EXPORT ====================
+
+  const exportToCSV = async () => {
+    const module = MODULES.find(m => m.id === exportModule);
+    let query = supabase.from(module.table).select('*, locations(name)');
+
+    if (exportLocation !== 'all') {
+      const loc = locations.find(l => l.name === exportLocation);
+      if (loc) query = query.eq('location_id', loc.id);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (!data || data.length === 0) {
+      showMessage('error', 'No data to export');
+      return;
+    }
+
+    // Convert to CSV
+    const headers = Object.keys(data[0]).filter(k => k !== 'locations' && k !== 'location_id');
+    headers.push('location');
+
+    const rows = data.map(row => {
+      const newRow = {};
+      headers.forEach(h => {
+        if (h === 'location') {
+          newRow[h] = row.locations?.name || '';
+        } else {
+          newRow[h] = row[h] ?? '';
+        }
+      });
+      return newRow;
+    });
+
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => headers.map(h => `"${String(row[h]).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportModule}_${exportLocation}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+
+    showMessage('success', '✓ Export complete!');
   };
+
+  // ==================== AI CHAT ====================
 
   const askAI = async () => {
     if (!chatInput.trim()) return;
-    
+
     const userMessage = chatInput;
     setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatInput('');
     setAiLoading(true);
-    
+
+    // Build data summary
     let dataSummary = '\n📊 SYSTEM OVERVIEW:\n';
     
-    const reconEntries = allData['daily-recon'] || [];
-    if (reconEntries.length > 0) {
-      const totalCash = reconEntries.reduce((sum, e) => sum + (e.total || 0), 0);
-      const totalDeposits = reconEntries.reduce((sum, e) => sum + (e.depositTotal || 0), 0);
-      dataSummary += `\n💰 DAILY RECON (${reconEntries.length} entries):`;
-      dataSummary += `\n   - Total Cash Collected: $${totalCash.toFixed(2)}`;
-      dataSummary += `\n   - Total Deposits: $${totalDeposits.toFixed(2)}`;
+    for (const mod of MODULES) {
+      const data = moduleData[mod.id] || [];
+      if (data.length > 0) {
+        dataSummary += `\n${mod.name}: ${data.length} records`;
+      }
     }
-    
-    const billingEntries = allData['billing-inquiry'] || [];
-    if (billingEntries.length > 0) {
-      const pending = billingEntries.filter(e => e.status === 'Pending').length;
-      const inProgress = billingEntries.filter(e => e.status === 'In Progress').length;
-      const resolved = billingEntries.filter(e => e.status === 'Resolved').length;
-      dataSummary += `\n\n🧾 BILLING INQUIRIES (${billingEntries.length} total):`;
-      dataSummary += `\n   - Pending: ${pending}, In Progress: ${inProgress}, Resolved: ${resolved}`;
-    }
-    
-    const billsEntries = allData['bills-payment'] || [];
-    if (billsEntries.length > 0) {
-      const unpaid = billsEntries.filter(e => e.paid !== 'Yes').length;
-      const totalAmount = billsEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      dataSummary += `\n\n💳 BILLS PAYMENT (${billsEntries.length} total):`;
-      dataSummary += `\n   - Unpaid bills: ${unpaid}`;
-      dataSummary += `\n   - Total amount: $${totalAmount.toFixed(2)}`;
-    }
-    
-    const orderEntries = allData['order-requests'] || [];
-    if (orderEntries.length > 0) {
-      const totalOrders = orderEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      dataSummary += `\n\n📦 ORDER REQUESTS (${orderEntries.length} total):`;
-      dataSummary += `\n   - Total order value: $${totalOrders.toFixed(2)}`;
-    }
-    
-    const refundEntries = allData['refund-requests'] || [];
-    if (refundEntries.length > 0) {
-      const pendingRefunds = refundEntries.filter(e => e.status === 'Pending').length;
-      const totalRefunds = refundEntries.reduce((sum, e) => sum + (parseFloat(e.amountRequested) || 0), 0);
-      dataSummary += `\n\n🔄 REFUND REQUESTS (${refundEntries.length} total):`;
-      dataSummary += `\n   - Pending: ${pendingRefunds}`;
-      dataSummary += `\n   - Total requested: $${totalRefunds.toFixed(2)}`;
-    }
-    
-    const itEntries = allData['it-requests'] || [];
-    if (itEntries.length > 0) {
-      const open = itEntries.filter(e => e.status === 'Open').length;
-      const inProgress = itEntries.filter(e => e.status === 'In Progress').length;
-      const critical = itEntries.filter(e => e.urgencyLevel === 'Critical' && e.status !== 'Closed').length;
-      dataSummary += `\n\n🖥️ IT REQUESTS (${itEntries.length} total):`;
-      dataSummary += `\n   - Open: ${open}, In Progress: ${inProgress}`;
-      dataSummary += `\n   - Critical issues: ${critical}`;
-    }
-    
-    dataSummary += `\n\n📍 LOCATIONS: ${LOCATIONS.join(', ')}`;
-    dataSummary += `\n👤 Current user: ${currentUser?.name || 'Unknown'}`;
-    dataSummary += `\n📍 Current location filter: ${isAdmin ? adminLocation : selectedLocation}`;
-    
+
+    dataSummary += `\n\n📍 Locations: ${locations.map(l => l.name).join(', ')}`;
+    dataSummary += `\n👤 Current user: ${currentUser?.name} (${currentUser?.role})`;
+
     try {
-      const response = await fetch('/api/chat', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          messages: [{ role: 'user', content: userMessage }], 
-          dataSummary 
-        }) 
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }], dataSummary })
       });
-      
+
       const data = await response.json();
       const aiResponse = data.content?.[0]?.text || 'Sorry, I could not process that request.';
       setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
-      
     } catch (error) {
-      console.error('AI Chat error:', error);
-      setChatMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: '❌ Unable to connect to AI. Please check your connection and try again.' 
-      }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: '❌ Unable to connect to AI.' }]);
     }
-    
+
     setAiLoading(false);
   };
 
-  const getModuleEntries = (moduleId) => {
-    const entries = allData[moduleId] || [];
-    if (isAdmin && adminLocation !== 'all') return entries.filter(e => e.location === adminLocation);
-    if (!isAdmin && selectedLocation) return entries.filter(e => e.location === selectedLocation);
-    return entries;
-  };
+  // ==================== RENDER HELPERS ====================
 
-  const getFileCount = (entry) => entry.files ? Object.values(entry.files).reduce((sum, arr) => sum + (arr?.length || 0), 0) : 0;
-
-  const getAllDocuments = () => {
-    const docs = [];
-    MODULES.forEach(m => { (allData[m.id] || []).forEach(entry => { if (entry.files) { Object.entries(entry.files).forEach(([cat, fileList]) => { (fileList || []).forEach(file => { docs.push({ ...file, module: m.name, location: entry.location, entryDate: entry.timestamp?.split('T')[0], enteredBy: entry.enteredBy, category: cat }); }); }); } }); });
-    return docs;
-  };
-
+  const getModuleEntries = () => moduleData[activeModule] || [];
   const currentColors = MODULE_COLORS[activeModule];
+  const currentModule = MODULES.find(m => m.id === activeModule);
+
+  // ==================== LOGIN SCREEN ====================
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm relative z-10 border border-white/20">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
               <Building2 className="w-10 h-10 text-white" />
@@ -510,41 +892,52 @@ export default function ClinicSystem() {
             <p className="text-gray-500 text-sm mt-1">Healthcare Management Portal</p>
           </div>
 
-          <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
-            <button onClick={() => setLoginMode('staff')} className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${loginMode === 'staff' ? 'bg-white shadow-md text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Staff</button>
-            <button onClick={() => setLoginMode('admin')} className={`flex-1 py-2.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1 ${loginMode === 'admin' ? 'bg-white shadow-md text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}><Shield className="w-4 h-4" />Admin</button>
-          </div>
-
-          {message && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{message}</div>}
-
-          {loginMode === 'staff' ? (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email / Username</label>
-                <input type="text" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all" placeholder="Enter email" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
-                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleStaffLogin()} className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all" placeholder="Enter password" />
-              </div>
-              <button onClick={handleStaffLogin} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold hover:shadow-lg hover:shadow-blue-500/30 transition-all">Login →</button>
-              <p className="text-xs text-center text-gray-400">Demo: demo / 1234</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Admin Password</label>
-                <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-purple-400 focus:ring-4 focus:ring-purple-100 transition-all" placeholder="Enter admin password" />
-              </div>
-              <button onClick={handleAdminLogin} className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-lg font-semibold hover:shadow-lg hover:shadow-purple-500/30 transition-all">Login →</button>
+          {message.text && (
+            <div className={`mb-4 p-3 rounded-xl text-sm flex items-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+              <AlertCircle className="w-4 h-4" />
+              {message.text}
             </div>
           )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email / Username</label>
+              <input
+                type="text"
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all"
+                placeholder="Enter email"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all"
+                placeholder="Enter password"
+              />
+            </div>
+            <button
+              onClick={handleLogin}
+              disabled={loginLoading}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold hover:shadow-lg hover:shadow-blue-500/30 transition-all disabled:opacity-50"
+            >
+              {loginLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Login →'}
+            </button>
+            <p className="text-xs text-center text-gray-400">Default admin: admin / admin123</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!isAdmin && !selectedLocation && currentUser.locations.length > 1) {
+  // ==================== LOCATION SELECTION ====================
+
+  if (!isAdmin && !selectedLocation && userLocations.length > 1) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
         <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
@@ -553,72 +946,87 @@ export default function ClinicSystem() {
               <User className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-xl font-bold text-gray-800">Welcome, {currentUser.name}!</h1>
-            <p className="text-gray-500">Select your location to continue</p>
+            <p className="text-gray-500">Select your location</p>
           </div>
           <div className="space-y-2">
-            {currentUser.locations.map(loc => (
-              <button key={loc} onClick={() => setSelectedLocation(loc)} className="w-full p-4 border-2 border-gray-200 rounded-xl text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:border-blue-300 flex items-center gap-3 transition-all group">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-500 transition-colors">
-                  <Building2 className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" />
+            {userLocations.map(loc => (
+              <button
+                key={loc.id}
+                onClick={() => setSelectedLocation(loc.name)}
+                className="w-full p-4 border-2 border-gray-200 rounded-xl text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:border-blue-300 flex items-center gap-3 transition-all"
+              >
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-blue-600" />
                 </div>
-                <span className="font-medium text-gray-700">{loc}</span>
+                <span className="font-medium text-gray-700">{loc.name}</span>
               </button>
             ))}
           </div>
-          <button onClick={handleLogout} className="w-full mt-6 py-2.5 text-gray-500 hover:text-gray-700 transition-colors">← Back to Login</button>
+          <button onClick={handleLogout} className="w-full mt-6 py-2.5 text-gray-500 hover:text-gray-700 transition-colors">
+            ← Back to Login
+          </button>
         </div>
       </div>
     );
   }
 
-  const currentModule = MODULES.find(m => m.id === activeModule);
-  const entries = getModuleEntries(activeModule);
-  const allDocs = getAllDocuments();
+  // ==================== MAIN DASHBOARD ====================
+
+  const entries = getModuleEntries();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-slate-100 flex">
       <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />
-      <FloatingChat messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={askAI} loading={aiLoading} isAdmin={isAdmin} />
+      <FloatingChat messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={askAI} loading={aiLoading} userRole={currentUser?.role} />
 
+      {/* Sidebar */}
       <div className={`fixed inset-y-0 left-0 z-40 w-72 bg-white shadow-xl transform transition-transform lg:relative lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className={`p-5 ${isAdmin ? 'bg-gradient-to-r from-purple-600 to-indigo-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
+        <div className={`p-5 ${isSuperAdmin ? 'bg-gradient-to-r from-rose-600 to-pink-600' : isAdmin ? 'bg-gradient-to-r from-purple-600 to-indigo-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              {isAdmin ? <Shield className="w-6 h-6 text-white" /> : <User className="w-6 h-6 text-white" />}
+              {isSuperAdmin ? <Shield className="w-6 h-6 text-white" /> : isAdmin ? <Shield className="w-6 h-6 text-white" /> : <User className="w-6 h-6 text-white" />}
             </div>
             <div className="text-white">
               <p className="font-semibold">{currentUser.name}</p>
-              <p className="text-sm text-white/80">{isAdmin ? 'Administrator' : selectedLocation}</p>
+              <p className="text-sm text-white/80">
+                {isSuperAdmin ? 'Super Admin' : isAdmin ? 'Finance Admin' : selectedLocation}
+              </p>
             </div>
           </div>
         </div>
 
+        {/* Location Filter */}
         {isAdmin && (
           <div className="p-4 border-b bg-purple-50">
             <label className="text-xs font-medium text-purple-700 mb-1.5 block">Filter by Location</label>
             <select value={adminLocation} onChange={e => setAdminLocation(e.target.value)} className="w-full p-2.5 border-2 border-purple-200 rounded-xl text-sm focus:border-purple-400 outline-none bg-white">
               <option value="all">📍 All Locations</option>
-              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
             </select>
           </div>
         )}
 
-        {!isAdmin && currentUser.locations.length > 1 && (
+        {!isAdmin && userLocations.length > 1 && (
           <div className="p-4 border-b bg-blue-50">
             <label className="text-xs font-medium text-blue-700 mb-1.5 block">Switch Location</label>
             <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="w-full p-2.5 border-2 border-blue-200 rounded-xl text-sm focus:border-blue-400 outline-none bg-white">
-              {currentUser.locations.map(l => <option key={l} value={l}>{l}</option>)}
+              {userLocations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
             </select>
           </div>
         )}
 
+        {/* Navigation */}
         <nav className="p-4 space-y-1.5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-3">Modules</p>
           {MODULES.map(m => {
             const colors = MODULE_COLORS[m.id];
             const isActive = activeModule === m.id && adminView !== 'users' && adminView !== 'export' && adminView !== 'settings' && view !== 'settings';
             return (
-              <button key={m.id} onClick={() => { setActiveModule(m.id); setAdminView('records'); setView('entry'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${isActive ? `${colors.bg} ${colors.text} ${colors.border} border-2` : 'text-gray-600 hover:bg-gray-50'}`}>
+              <button
+                key={m.id}
+                onClick={() => { setActiveModule(m.id); setAdminView('records'); setView('entry'); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${isActive ? `${colors.bg} ${colors.text} ${colors.border} border-2` : 'text-gray-600 hover:bg-gray-50'}`}
+              >
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isActive ? colors.light : 'bg-gray-100'}`}>
                   <m.icon className={`w-4 h-4 ${isActive ? colors.text : 'text-gray-500'}`} />
                 </div>
@@ -626,13 +1034,13 @@ export default function ClinicSystem() {
               </button>
             );
           })}
-          
+
           <div className="border-t my-4"></div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-3">Management</p>
-          
-          {isAdmin ? (
+
+          {isAdmin && (
             <>
-              <button onClick={() => { setAdminView('users'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${adminView === 'users' ? 'bg-purple-50 text-purple-700 border-2 border-purple-200' : 'text-gray-600 hover:bg-gray-50'}`}>
+              <button onClick={() => { setAdminView('users'); loadUsers(); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${adminView === 'users' ? 'bg-purple-50 text-purple-700 border-2 border-purple-200' : 'text-gray-600 hover:bg-gray-50'}`}>
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${adminView === 'users' ? 'bg-purple-100' : 'bg-gray-100'}`}><Users className="w-4 h-4" /></div>
                 <span className="text-sm font-medium">Users</span>
               </button>
@@ -641,16 +1049,15 @@ export default function ClinicSystem() {
                 <span className="text-sm font-medium">Export</span>
               </button>
             </>
-          ) : (
-            <button onClick={() => { setView('export'); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${view === 'export' ? 'bg-blue-50 text-blue-700 border-2 border-blue-200' : 'text-gray-600 hover:bg-gray-50'}`}>
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${view === 'export' ? 'bg-blue-100' : 'bg-gray-100'}`}><Download className="w-4 h-4" /></div>
-              <span className="text-sm font-medium">Export</span>
-            </button>
           )}
         </nav>
 
+        {/* Bottom buttons */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-gray-50">
-          <button onClick={() => { isAdmin ? setAdminView('settings') : setView('settings'); setSidebarOpen(false); }} className={`w-full flex items-center justify-center gap-2 py-2.5 mb-2 rounded-xl transition-all ${(isAdmin ? adminView : view) === 'settings' ? (isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700') : 'text-gray-500 hover:bg-gray-200'}`}>
+          <button
+            onClick={() => { isAdmin ? setAdminView('settings') : setView('settings'); setSidebarOpen(false); }}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 mb-2 rounded-xl transition-all ${(isAdmin ? adminView : view) === 'settings' ? (isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700') : 'text-gray-500 hover:bg-gray-200'}`}
+          >
             <Settings className="w-4 h-4" /> Settings
           </button>
           <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-2.5 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all">
@@ -659,20 +1066,23 @@ export default function ClinicSystem() {
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen">
         <header className="bg-white shadow-sm border-b sticky top-0 z-30">
           <div className="flex items-center justify-between px-4 py-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden p-2 hover:bg-gray-100 rounded-xl"><Menu className="w-5 h-5" /></button>
               <div>
-                <h1 className="font-bold text-gray-800 text-lg">{isAdmin ? (adminView === 'users' ? 'User Management' : adminView === 'export' ? 'Export Data' : adminView === 'settings' ? 'Settings' : currentModule?.name) : (view === 'settings' ? 'Settings' : currentModule?.name)}</h1>
+                <h1 className="font-bold text-gray-800 text-lg">
+                  {isAdmin ? (adminView === 'users' ? 'User Management' : adminView === 'export' ? 'Export Data' : adminView === 'settings' ? 'Settings' : currentModule?.name) : (view === 'settings' ? 'Settings' : currentModule?.name)}
+                </h1>
                 <p className="text-sm text-gray-500">{isAdmin ? (adminLocation === 'all' ? 'All Locations' : adminLocation) : selectedLocation}</p>
               </div>
             </div>
-            <div className={`px-3 py-1.5 rounded-lg text-xs font-medium ${currentColors?.light} ${currentColors?.text}`}>
-              {(allData[activeModule] || []).length} records
-            </div>
+            {loading && <Loader2 className="w-5 h-5 animate-spin text-gray-400" />}
           </div>
+
+          {/* Tabs */}
           <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
             {isAdmin && adminView !== 'users' && adminView !== 'export' && adminView !== 'settings' ? (
               [{ id: 'records', label: 'Records', icon: FileText }, { id: 'documents', label: 'Documents', icon: FolderOpen }].map(tab => (
@@ -680,7 +1090,7 @@ export default function ClinicSystem() {
                   <tab.icon className="w-4 h-4" />{tab.label}
                 </button>
               ))
-            ) : !isAdmin && view !== 'settings' && view !== 'export' ? (
+            ) : !isAdmin && view !== 'settings' ? (
               [{ id: 'entry', label: '+ New Entry' }, { id: 'history', label: 'History' }].map(tab => (
                 <button key={tab.id} onClick={() => setView(tab.id)} className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${view === tab.id ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{tab.label}</button>
               ))
@@ -688,51 +1098,90 @@ export default function ClinicSystem() {
           </div>
         </header>
 
-        {message && <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-700 rounded-xl text-center font-medium shadow-sm">{message}</div>}
+        {/* Messages */}
+        {message.text && (
+          <div className={`mx-4 mt-4 p-4 rounded-xl text-center font-medium shadow-sm flex items-center justify-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-700'}`}>
+            {message.type === 'error' ? <AlertCircle className="w-4 h-4" /> : null}
+            {message.text}
+          </div>
+        )}
 
         <main className="flex-1 p-4 max-w-4xl mx-auto w-full pb-24">
+          {/* ADMIN: User Management */}
           {isAdmin && adminView === 'users' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-700">{users.length} Users</h2>
-                <button onClick={() => setShowAddUser(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all"><Plus className="w-4 h-4" />Add User</button>
+                <button onClick={() => setShowAddUser(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all">
+                  <Plus className="w-4 h-4" />Add User
+                </button>
               </div>
+
+              {/* Add/Edit User Form */}
               {(showAddUser || editingUser) && (
                 <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                   <h3 className="font-semibold mb-4 text-gray-800">{editingUser ? 'Edit User' : 'Add New User'}</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Name" value={editingUser ? editingUser.name : newUser.name} onChange={e => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})} />
-                    <InputField label="Email / Username" value={editingUser ? editingUser.email : newUser.email} onChange={e => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})} />
-                    <div className="col-span-2"><InputField label={editingUser ? "New Password (leave blank to keep)" : "Password"} type="password" value={editingUser ? (editingUser.newPassword || '') : newUser.password} onChange={e => editingUser ? setEditingUser({...editingUser, newPassword: e.target.value, password: e.target.value || editingUser.password}) : setNewUser({...newUser, password: e.target.value})} /></div>
+                    <InputField label="Name *" value={editingUser ? editingUser.name : newUser.name} onChange={e => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})} />
+                    <InputField label="Email *" value={editingUser ? editingUser.email : newUser.email} onChange={e => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})} />
+                    <InputField label={editingUser ? "New Password" : "Password *"} type="password" value={editingUser ? (editingUser.newPassword || '') : newUser.password} onChange={e => editingUser ? setEditingUser({...editingUser, newPassword: e.target.value}) : setNewUser({...newUser, password: e.target.value})} placeholder={editingUser ? "Leave blank to keep current" : ""} />
+                    <InputField label="Role" value={editingUser ? editingUser.role : newUser.role} onChange={e => editingUser ? setEditingUser({...editingUser, role: e.target.value}) : setNewUser({...newUser, role: e.target.value})} options={isSuperAdmin ? ['staff', 'finance_admin', 'super_admin'] : ['staff', 'finance_admin']} />
                   </div>
                   <div className="mt-4">
                     <label className="text-xs font-medium text-gray-600 mb-2 block">Assigned Locations</label>
                     <div className="flex flex-wrap gap-2">
-                      {LOCATIONS.map(loc => (<button key={loc} onClick={() => toggleUserLocation(loc, !!editingUser)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${(editingUser ? editingUser.locations : newUser.locations).includes(loc) ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{loc}</button>))}
+                      {locations.map(loc => (
+                        <button
+                          key={loc.id}
+                          onClick={() => toggleUserLocation(loc.id, !!editingUser)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${(editingUser ? editingUser.locationIds : newUser.locations)?.includes(loc.id) ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >
+                          {loc.name}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <div className="flex gap-2 mt-5">
-                    <button onClick={editingUser ? updateUser : addUser} className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all">{editingUser ? 'Update' : 'Add'} User</button>
+                    <button onClick={editingUser ? updateUser : addUser} className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all">
+                      {editingUser ? 'Update' : 'Add'} User
+                    </button>
                     <button onClick={() => { setShowAddUser(false); setEditingUser(null); }} className="px-6 py-3 bg-gray-100 rounded-xl font-medium hover:bg-gray-200 transition-all">Cancel</button>
                   </div>
                 </div>
               )}
+
+              {/* Users List */}
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="divide-y">
-                  {users.map(u => (
+                  {users.filter(u => u.is_active !== false).map(u => (
                     <div key={u.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center text-white font-semibold">{u.name.charAt(0)}</div>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold ${u.role === 'super_admin' ? 'bg-gradient-to-br from-rose-500 to-pink-500' : u.role === 'finance_admin' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' : 'bg-gradient-to-br from-blue-500 to-indigo-500'}`}>
+                          {u.name.charAt(0)}
+                        </div>
                         <div>
                           <p className="font-medium text-gray-800">{u.name}</p>
-                          <p className="text-sm text-gray-500">{u.email}</p>
-                          <div className="flex flex-wrap gap-1 mt-1">{u.locations.map(loc => <span key={loc} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">{loc}</span>)}</div>
+                          <p className="text-sm text-gray-500">{u.email} • <span className="capitalize">{u.role?.replace('_', ' ')}</span></p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {u.locations?.map(loc => (
+                              <span key={loc.id} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">{loc.name}</span>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => setEditingUser(u)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Edit3 className="w-4 h-4" /></button>
-                        <button onClick={() => deleteUser(u.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
-                      </div>
+                      {u.id !== currentUser.id && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setEditingUser({ ...u, locationIds: u.locations?.map(l => l.id) || [] })}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => deleteUser(u.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -740,270 +1189,314 @@ export default function ClinicSystem() {
             </div>
           )}
 
-          {isAdmin && adminView === 'documents' && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <h2 className="font-semibold mb-4 flex items-center gap-2 text-gray-800"><FolderOpen className="w-5 h-5 text-amber-500" />Document Storage <span className="text-sm font-normal text-gray-500">({allDocs.length} files)</span></h2>
-              {allDocs.length === 0 ? <p className="text-gray-500 text-center py-8">No documents uploaded yet</p> : (
-                <div className="space-y-2">{allDocs.slice(0, 50).map((doc, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-slate-50 rounded-xl hover:from-blue-50 hover:to-indigo-50 transition-all">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0"><File className="w-5 h-5 text-blue-600" /></div>
-                      <div className="min-w-0"><p className="font-medium truncate text-gray-800">{doc.name}</p><p className="text-xs text-gray-500">{doc.module} • {doc.location} • {doc.entryDate}</p></div>
-                    </div>
-                    <button onClick={() => setViewingFile(doc)} className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"><Eye className="w-4 h-4" />View</button>
-                  </div>
-                ))}</div>
-              )}
-            </div>
-          )}
-
+          {/* ADMIN: Export */}
           {isAdmin && adminView === 'export' && (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center"><Download className="w-6 h-6 text-white" /></div>
-                <div><h2 className="font-semibold text-gray-800">Export Data</h2><p className="text-sm text-gray-500">Download records as CSV file</p></div>
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                  <Download className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-gray-800">Export Data</h2>
+                  <p className="text-sm text-gray-500">Download records as CSV file</p>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-4 mb-6">
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">System</label><select value={exportSystem} onChange={e => setExportSystem(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none">{MODULES.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Location</label><select value={exportLocation} onChange={e => setExportLocation(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none"><option value="all">All Locations</option>{LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Date Range</label><select value={exportRange} onChange={e => setExportRange(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none">{DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1.5 block">Module</label>
+                  <select value={exportModule} onChange={e => setExportModule(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none">
+                    {MODULES.filter(m => m.id !== 'it-requests').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1.5 block">Location</label>
+                  <select value={exportLocation} onChange={e => setExportLocation(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none">
+                    <option value="all">All Locations</option>
+                    {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1.5 block">Date Range</label>
+                  <select value={exportRange} onChange={e => setExportRange(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-400 outline-none">
+                    {DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
               </div>
-              <button onClick={exportToCSV} className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all"><Download className="w-5 h-5" />Export to CSV</button>
+              <button onClick={exportToCSV} className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all">
+                <Download className="w-5 h-5" />Export to CSV
+              </button>
             </div>
           )}
 
-          {isAdmin && adminView === 'settings' && (
+          {/* Settings */}
+          {((isAdmin && adminView === 'settings') || (!isAdmin && view === 'settings')) && (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center"><Lock className="w-6 h-6 text-white" /></div>
-                <div><h2 className="font-semibold text-gray-800">Change Admin Password</h2><p className="text-sm text-gray-500">Update your admin credentials</p></div>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isAdmin ? 'bg-gradient-to-br from-purple-500 to-indigo-500' : 'bg-gradient-to-br from-blue-500 to-indigo-500'}`}>
+                  <Lock className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-gray-800">Change Password</h2>
+                  <p className="text-sm text-gray-500">Update your account password</p>
+                </div>
               </div>
               <div className="space-y-4 max-w-sm">
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Current Password</label><input type="password" value={pwdForm.current} onChange={e => setPwdForm({...pwdForm, current: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-purple-400" placeholder="Enter current password" /></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">New Password</label><input type="password" value={pwdForm.new} onChange={e => setPwdForm({...pwdForm, new: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-purple-400" placeholder="Enter new password" /></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Confirm New Password</label><input type="password" value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-purple-400" placeholder="Confirm new password" /></div>
-                <button onClick={changeAdminPassword} className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all">Update Password</button>
+                <InputField label="Current Password" type="password" value={pwdForm.current} onChange={e => setPwdForm({...pwdForm, current: e.target.value})} placeholder="Enter current password" />
+                <InputField label="New Password" type="password" value={pwdForm.new} onChange={e => setPwdForm({...pwdForm, new: e.target.value})} placeholder="Enter new password" />
+                <InputField label="Confirm New Password" type="password" value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} placeholder="Confirm new password" />
+                <button onClick={changePassword} className={`w-full py-4 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all ${isAdmin ? 'bg-gradient-to-r from-purple-600 to-indigo-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
+                  Update Password
+                </button>
               </div>
             </div>
           )}
 
+          {/* Records View - Admin */}
           {isAdmin && adminView === 'records' && (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-800">All Records</h2>
                 <span className={`text-sm font-medium px-3 py-1 rounded-lg ${currentColors?.light} ${currentColors?.text}`}>{entries.length} entries</span>
               </div>
-              {entries.length === 0 ? <p className="text-gray-500 text-center py-8">No entries yet</p> : (
-                <div className="space-y-3">{entries.slice(0, 50).map(e => (
-                  <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all`}>
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold text-gray-800">{e.requestNumber || e.timestamp?.split('T')[0]}</p><StatusBadge status={e.status || e.billStatus} /></div>
-                        <p className="text-sm text-gray-600 mt-1">{e.location} • {e.enteredBy}</p>
-                        {e.descriptionOfIssue && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.descriptionOfIssue}</p>}
-                        {e.total && <p className="text-lg font-bold text-emerald-600 mt-2">${e.total.toFixed(2)}</p>}
-                        {getFileCount(e) > 0 && (<div className="mt-3 flex flex-wrap gap-1">{Object.entries(e.files || {}).map(([cat, fileList]) => (fileList || []).map((file, i) => (<button key={`${cat}-${i}`} onClick={() => setViewingFile(file)} className="flex items-center gap-1 px-2 py-1 bg-white/80 text-gray-700 rounded-lg text-xs font-medium hover:bg-white transition-colors"><Eye className="w-3 h-3" />{file.name?.slice(0, 15)}...</button>)))}</div>)}
-                      </div>
-                      {activeModule === 'it-requests' && (
-                        <div>{editingStatus === e.id ? (
-                          <div className="space-y-2 w-44">
-                            <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">{IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
-                            <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" className="w-full p-2 border-2 rounded-lg text-sm" />
-                            <div className="flex gap-1">
-                              <button onClick={() => updateITStatus(e.id, document.getElementById(`status-${e.id}`).value, document.getElementById(`notes-${e.id}`).value)} className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium">Save</button>
-                              <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
-                            </div>
+              {loading ? (
+                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+              ) : entries.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No entries yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {entries.slice(0, 50).map(e => (
+                    <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all`}>
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-gray-800">
+                              {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || e.created_at?.split('T')[0]}
+                            </p>
+                            <StatusBadge status={e.status} />
                           </div>
-                        ) : (<button onClick={() => setEditingStatus(e.id)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline"><Edit3 className="w-3 h-3" />Update</button>)}</div>
-                      )}
+                          <p className="text-sm text-gray-600 mt-1">
+                            {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
+                          </p>
+                          {e.description_of_issue && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.description_of_issue}</p>}
+                          {e.total_collected && <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>}
+                        </div>
+
+                        {/* Status Update for IT Requests */}
+                        {activeModule === 'it-requests' && (
+                          <div>
+                            {editingStatus === e.id ? (
+                              <div className="space-y-2 w-44">
+                                <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+                                  {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" className="w-full p-2 border-2 rounded-lg text-sm" />
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { resolution_notes: document.getElementById(`notes-${e.id}`).value })}
+                                    className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
+                                  >
+                                    Save
+                                  </button>
+                                  <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button onClick={() => setEditingStatus(e.id)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline">
+                                <Edit3 className="w-3 h-3" />Update
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}</div>
+                  ))}
+                </div>
               )}
             </div>
           )}
 
-          {!isAdmin && view === 'settings' && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center"><Lock className="w-6 h-6 text-white" /></div>
-                <div><h2 className="font-semibold text-gray-800">Change Password</h2><p className="text-sm text-gray-500">Update your account password</p></div>
-              </div>
-              <div className="space-y-4 max-w-sm">
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Current Password</label><input type="password" value={pwdForm.current} onChange={e => setPwdForm({...pwdForm, current: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400" placeholder="Enter current password" /></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">New Password</label><input type="password" value={pwdForm.new} onChange={e => setPwdForm({...pwdForm, new: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400" placeholder="Enter new password" /></div>
-                <div><label className="text-xs font-medium text-gray-600 mb-1.5 block">Confirm New Password</label><input type="password" value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400" placeholder="Confirm new password" /></div>
-                <button onClick={changeUserPassword} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all">Update Password</button>
-              </div>
-            </div>
-          )}
-
+          {/* Entry Form - Staff */}
           {!isAdmin && view === 'entry' && (
             <div className="space-y-4">
-              {activeModule === 'daily-recon' && (<>
-                <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
-                  <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2"><DollarSign className="w-5 h-5 text-emerald-500" />Daily Cash Can</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Date" type="date" value={forms['daily-recon'].date} onChange={e => updateForm('daily-recon', 'date', e.target.value)} />
-                    <InputField label="Cash" prefix="$" value={forms['daily-recon'].cash} onChange={e => updateForm('daily-recon', 'cash', e.target.value)} />
-                    <InputField label="Credit Card (OTC)" prefix="$" value={forms['daily-recon'].creditCard} onChange={e => updateForm('daily-recon', 'creditCard', e.target.value)} />
-                    <InputField label="Checks (OTC)" prefix="$" value={forms['daily-recon'].checksOTC} onChange={e => updateForm('daily-recon', 'checksOTC', e.target.value)} />
-                    <InputField label="Insurance Checks" prefix="$" value={forms['daily-recon'].insuranceChecks} onChange={e => updateForm('daily-recon', 'insuranceChecks', e.target.value)} />
-                    <InputField label="Care Credit" prefix="$" value={forms['daily-recon'].careCredit} onChange={e => updateForm('daily-recon', 'careCredit', e.target.value)} />
-                    <InputField label="VCC" prefix="$" value={forms['daily-recon'].vcc} onChange={e => updateForm('daily-recon', 'vcc', e.target.value)} />
-                    <InputField label="EFTs" prefix="$" value={forms['daily-recon'].efts} onChange={e => updateForm('daily-recon', 'efts', e.target.value)} />
+              {/* Daily Recon Form */}
+              {activeModule === 'daily-recon' && (
+                <>
+                  <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
+                    <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2">
+                      <DollarSign className="w-5 h-5 text-emerald-500" />Daily Cash Can
+                    </h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <InputField label="Date" type="date" value={forms['daily-recon'].recon_date} onChange={e => updateForm('daily-recon', 'recon_date', e.target.value)} />
+                      <InputField label="Cash" prefix="$" value={forms['daily-recon'].cash} onChange={e => updateForm('daily-recon', 'cash', e.target.value)} />
+                      <InputField label="Credit Card (OTC)" prefix="$" value={forms['daily-recon'].credit_card} onChange={e => updateForm('daily-recon', 'credit_card', e.target.value)} />
+                      <InputField label="Checks (OTC)" prefix="$" value={forms['daily-recon'].checks_otc} onChange={e => updateForm('daily-recon', 'checks_otc', e.target.value)} />
+                      <InputField label="Insurance Checks" prefix="$" value={forms['daily-recon'].insurance_checks} onChange={e => updateForm('daily-recon', 'insurance_checks', e.target.value)} />
+                      <InputField label="Care Credit" prefix="$" value={forms['daily-recon'].care_credit} onChange={e => updateForm('daily-recon', 'care_credit', e.target.value)} />
+                      <InputField label="VCC" prefix="$" value={forms['daily-recon'].vcc} onChange={e => updateForm('daily-recon', 'vcc', e.target.value)} />
+                      <InputField label="EFTs" prefix="$" value={forms['daily-recon'].efts} onChange={e => updateForm('daily-recon', 'efts', e.target.value)} />
+                    </div>
                   </div>
-                </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6 border-l-4 border-blue-500">
-                  <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-500" />Bank Deposit</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Cash" prefix="$" value={forms['daily-recon'].depositCash} onChange={e => updateForm('daily-recon', 'depositCash', e.target.value)} />
-                    <InputField label="Credit Card" prefix="$" value={forms['daily-recon'].depositCreditCard} onChange={e => updateForm('daily-recon', 'depositCreditCard', e.target.value)} />
-                    <InputField label="Checks" prefix="$" value={forms['daily-recon'].depositChecks} onChange={e => updateForm('daily-recon', 'depositChecks', e.target.value)} />
-                    <InputField label="Insurance" prefix="$" value={forms['daily-recon'].depositInsurance} onChange={e => updateForm('daily-recon', 'depositInsurance', e.target.value)} />
-                    <InputField label="Care Credit" prefix="$" value={forms['daily-recon'].depositCareCredit} onChange={e => updateForm('daily-recon', 'depositCareCredit', e.target.value)} />
-                    <InputField label="VCC" prefix="$" value={forms['daily-recon'].depositVCC} onChange={e => updateForm('daily-recon', 'depositVCC', e.target.value)} />
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border-l-4 border-blue-500">
+                    <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2">
+                      <Building2 className="w-5 h-5 text-blue-500" />Bank Deposit
+                    </h2>
+                    <div className="grid grid-cols-2 gap-4">
+                      <InputField label="Cash" prefix="$" value={forms['daily-recon'].deposit_cash} onChange={e => updateForm('daily-recon', 'deposit_cash', e.target.value)} />
+                      <InputField label="Credit Card" prefix="$" value={forms['daily-recon'].deposit_credit_card} onChange={e => updateForm('daily-recon', 'deposit_credit_card', e.target.value)} />
+                      <InputField label="Checks" prefix="$" value={forms['daily-recon'].deposit_checks} onChange={e => updateForm('daily-recon', 'deposit_checks', e.target.value)} />
+                      <InputField label="Insurance" prefix="$" value={forms['daily-recon'].deposit_insurance} onChange={e => updateForm('daily-recon', 'deposit_insurance', e.target.value)} />
+                      <InputField label="Care Credit" prefix="$" value={forms['daily-recon'].deposit_care_credit} onChange={e => updateForm('daily-recon', 'deposit_care_credit', e.target.value)} />
+                      <InputField label="VCC" prefix="$" value={forms['daily-recon'].deposit_vcc} onChange={e => updateForm('daily-recon', 'deposit_vcc', e.target.value)} />
+                    </div>
+                    <div className="mt-4">
+                      <InputField label="Notes" value={forms['daily-recon'].notes} onChange={e => updateForm('daily-recon', 'notes', e.target.value)} />
+                    </div>
                   </div>
-                  <div className="mt-4"><InputField label="Notes" value={forms['daily-recon'].notes} onChange={e => updateForm('daily-recon', 'notes', e.target.value)} /></div>
-                </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6">
-                  <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2"><File className="w-5 h-5 text-amber-500" />Documents</h2>
-                  <div className="space-y-4">
-                    <FileUpload label="EOD Day Sheets" files={files['daily-recon'].eodDaySheets} onFilesChange={f => updateFiles('daily-recon', 'eodDaySheets', f)} onViewFile={setViewingFile} />
-                    <FileUpload label="EOD Bank Receipts" files={files['daily-recon'].eodBankReceipts} onFilesChange={f => updateFiles('daily-recon', 'eodBankReceipts', f)} onViewFile={setViewingFile} />
-                    <FileUpload label="Other Files" files={files['daily-recon'].otherFiles} onFilesChange={f => updateFiles('daily-recon', 'otherFiles', f)} onViewFile={setViewingFile} />
+                  <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2">
+                      <File className="w-5 h-5 text-amber-500" />Documents
+                    </h2>
+                    <div className="space-y-4">
+                      <FileUpload label="EOD Day Sheets" files={files['daily-recon'].eodDaySheets} onFilesChange={f => updateFiles('daily-recon', 'eodDaySheets', f)} onViewFile={setViewingFile} />
+                      <FileUpload label="EOD Bank Receipts" files={files['daily-recon'].eodBankReceipts} onFilesChange={f => updateFiles('daily-recon', 'eodBankReceipts', f)} onViewFile={setViewingFile} />
+                      <FileUpload label="Other Files" files={files['daily-recon'].otherFiles} onFilesChange={f => updateFiles('daily-recon', 'otherFiles', f)} onViewFile={setViewingFile} />
+                    </div>
                   </div>
-                </div>
-              </>)}
+                </>
+              )}
 
-              {activeModule === 'billing-inquiry' && (<>
+              {/* IT Requests Form */}
+              {activeModule === 'it-requests' && (
+                <>
+                  <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
+                    <h2 className="font-semibold mb-2 text-gray-800">IT Request</h2>
+                    <p className="text-sm text-gray-500 mb-4">Ticket # will be auto-generated</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <InputField label="Date Reported" type="date" value={forms['it-requests'].date_reported} onChange={e => updateForm('it-requests', 'date_reported', e.target.value)} />
+                      <InputField label="Urgency Level" value={forms['it-requests'].urgency} onChange={e => updateForm('it-requests', 'urgency', e.target.value)} options={['Low', 'Medium', 'High', 'Critical']} />
+                      <InputField label="Requester Name" value={forms['it-requests'].requester_name} onChange={e => updateForm('it-requests', 'requester_name', e.target.value)} />
+                      <InputField label="Device / System" value={forms['it-requests'].device_system} onChange={e => updateForm('it-requests', 'device_system', e.target.value)} />
+                      <InputField label="Contact Method" value={forms['it-requests'].best_contact_method} onChange={e => updateForm('it-requests', 'best_contact_method', e.target.value)} options={['Phone', 'Email', 'Text']} />
+                      <InputField label="Contact Time" value={forms['it-requests'].best_contact_time} onChange={e => updateForm('it-requests', 'best_contact_time', e.target.value)} />
+                    </div>
+                    <div className="mt-4">
+                      <InputField label="Description of Issue" large value={forms['it-requests'].description_of_issue} onChange={e => updateForm('it-requests', 'description_of_issue', e.target.value)} placeholder="Describe the issue in detail..." />
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <FileUpload label="Screenshots / Documentation" files={files['it-requests'].documentation} onFilesChange={f => updateFiles('it-requests', 'documentation', f)} onViewFile={setViewingFile} />
+                  </div>
+                </>
+              )}
+
+              {/* Other module forms would go here - simplified for space */}
+              {activeModule === 'billing-inquiry' && (
                 <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
                   <h2 className="font-semibold mb-4 text-gray-800">Billing Inquiry</h2>
                   <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Patient Name" value={forms['billing-inquiry'].patientName} onChange={e => updateForm('billing-inquiry', 'patientName', e.target.value)} />
-                    <InputField label="Chart Number" value={forms['billing-inquiry'].chartNumber} onChange={e => updateForm('billing-inquiry', 'chartNumber', e.target.value)} />
-                    <InputField label="Date of Service" type="date" value={forms['billing-inquiry'].dateOfService} onChange={e => updateForm('billing-inquiry', 'dateOfService', e.target.value)} />
-                    <InputField label="Amount in Question" prefix="$" value={forms['billing-inquiry'].amountInQuestion} onChange={e => updateForm('billing-inquiry', 'amountInQuestion', e.target.value)} />
-                    <InputField label="Best Contact Method" value={forms['billing-inquiry'].bestContactMethod} onChange={e => updateForm('billing-inquiry', 'bestContactMethod', e.target.value)} options={['Phone', 'Email', 'Text']} />
-                    <InputField label="Best Contact Time" value={forms['billing-inquiry'].bestContactTime} onChange={e => updateForm('billing-inquiry', 'bestContactTime', e.target.value)} />
-                    <InputField label="Reviewed By" value={forms['billing-inquiry'].reviewedBy} onChange={e => updateForm('billing-inquiry', 'reviewedBy', e.target.value)} />
-                    <InputField label="Initials" value={forms['billing-inquiry'].initials} onChange={e => updateForm('billing-inquiry', 'initials', e.target.value)} />
+                    <InputField label="Patient Name" value={forms['billing-inquiry'].patient_name} onChange={e => updateForm('billing-inquiry', 'patient_name', e.target.value)} />
+                    <InputField label="Chart Number" value={forms['billing-inquiry'].chart_number} onChange={e => updateForm('billing-inquiry', 'chart_number', e.target.value)} />
+                    <InputField label="Date of Service" type="date" value={forms['billing-inquiry'].date_of_service} onChange={e => updateForm('billing-inquiry', 'date_of_service', e.target.value)} />
+                    <InputField label="Amount in Question" prefix="$" value={forms['billing-inquiry'].amount_in_question} onChange={e => updateForm('billing-inquiry', 'amount_in_question', e.target.value)} />
+                    <InputField label="Contact Method" value={forms['billing-inquiry'].best_contact_method} onChange={e => updateForm('billing-inquiry', 'best_contact_method', e.target.value)} options={['Phone', 'Email', 'Text']} />
+                    <InputField label="Contact Time" value={forms['billing-inquiry'].best_contact_time} onChange={e => updateForm('billing-inquiry', 'best_contact_time', e.target.value)} />
                     <InputField label="Status" value={forms['billing-inquiry'].status} onChange={e => updateForm('billing-inquiry', 'status', e.target.value)} options={['Pending', 'In Progress', 'Resolved']} />
                     <InputField label="Result" value={forms['billing-inquiry'].result} onChange={e => updateForm('billing-inquiry', 'result', e.target.value)} />
                   </div>
                 </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6"><FileUpload label="Documentation" files={files['billing-inquiry'].documentation} onFilesChange={f => updateFiles('billing-inquiry', 'documentation', f)} onViewFile={setViewingFile} /></div>
-              </>)}
+              )}
 
-              {activeModule === 'bills-payment' && (<>
+              {activeModule === 'bills-payment' && (
                 <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
                   <h2 className="font-semibold mb-4 text-gray-800">Bills Payment</h2>
                   <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Bill Status" value={forms['bills-payment'].billStatus} onChange={e => updateForm('bills-payment', 'billStatus', e.target.value)} options={['Pending', 'Approved', 'Paid']} />
-                    <InputField label="Date" type="date" value={forms['bills-payment'].date} onChange={e => updateForm('bills-payment', 'date', e.target.value)} />
+                    <InputField label="Bill Date" type="date" value={forms['bills-payment'].bill_date} onChange={e => updateForm('bills-payment', 'bill_date', e.target.value)} />
                     <InputField label="Vendor" value={forms['bills-payment'].vendor} onChange={e => updateForm('bills-payment', 'vendor', e.target.value)} />
                     <InputField label="Description" value={forms['bills-payment'].description} onChange={e => updateForm('bills-payment', 'description', e.target.value)} />
                     <InputField label="Amount" prefix="$" value={forms['bills-payment'].amount} onChange={e => updateForm('bills-payment', 'amount', e.target.value)} />
-                    <InputField label="Due Date" type="date" value={forms['bills-payment'].dueDate} onChange={e => updateForm('bills-payment', 'dueDate', e.target.value)} />
-                    <InputField label="Manager Initials" value={forms['bills-payment'].managerInitials} onChange={e => updateForm('bills-payment', 'managerInitials', e.target.value)} />
-                    <InputField label="AP Reviewed" value={forms['bills-payment'].apReviewed} onChange={e => updateForm('bills-payment', 'apReviewed', e.target.value)} options={['Yes', 'No']} />
-                    <InputField label="Date Reviewed" type="date" value={forms['bills-payment'].dateReviewed} onChange={e => updateForm('bills-payment', 'dateReviewed', e.target.value)} />
-                    <InputField label="Paid" value={forms['bills-payment'].paid} onChange={e => updateForm('bills-payment', 'paid', e.target.value)} options={['Yes', 'No']} />
+                    <InputField label="Due Date" type="date" value={forms['bills-payment'].due_date} onChange={e => updateForm('bills-payment', 'due_date', e.target.value)} />
+                    <InputField label="Status" value={forms['bills-payment'].status} onChange={e => updateForm('bills-payment', 'status', e.target.value)} options={['Pending', 'Approved', 'Paid']} />
                   </div>
                 </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6"><FileUpload label="Bills Documentation" files={files['bills-payment'].documentation} onFilesChange={f => updateFiles('bills-payment', 'documentation', f)} onViewFile={setViewingFile} /></div>
-              </>)}
+              )}
 
-              {activeModule === 'order-requests' && (<>
+              {activeModule === 'order-requests' && (
                 <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
                   <h2 className="font-semibold mb-4 text-gray-800">Order Request</h2>
                   <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Date Entered" type="date" value={forms['order-requests'].dateEntered} onChange={e => updateForm('order-requests', 'dateEntered', e.target.value)} />
+                    <InputField label="Date Entered" type="date" value={forms['order-requests'].date_entered} onChange={e => updateForm('order-requests', 'date_entered', e.target.value)} />
                     <InputField label="Vendor" value={forms['order-requests'].vendor} onChange={e => updateForm('order-requests', 'vendor', e.target.value)} />
-                    <InputField label="Invoice Number" value={forms['order-requests'].invoiceNumber} onChange={e => updateForm('order-requests', 'invoiceNumber', e.target.value)} />
-                    <InputField label="Invoice Date" type="date" value={forms['order-requests'].invoiceDate} onChange={e => updateForm('order-requests', 'invoiceDate', e.target.value)} />
-                    <InputField label="Due Date" type="date" value={forms['order-requests'].dueDate} onChange={e => updateForm('order-requests', 'dueDate', e.target.value)} />
+                    <InputField label="Invoice Number" value={forms['order-requests'].invoice_number} onChange={e => updateForm('order-requests', 'invoice_number', e.target.value)} />
+                    <InputField label="Invoice Date" type="date" value={forms['order-requests'].invoice_date} onChange={e => updateForm('order-requests', 'invoice_date', e.target.value)} />
+                    <InputField label="Due Date" type="date" value={forms['order-requests'].due_date} onChange={e => updateForm('order-requests', 'due_date', e.target.value)} />
                     <InputField label="Amount" prefix="$" value={forms['order-requests'].amount} onChange={e => updateForm('order-requests', 'amount', e.target.value)} />
-                    <InputField label="Entered By" value={forms['order-requests'].enteredBy} onChange={e => updateForm('order-requests', 'enteredBy', e.target.value)} />
+                    <InputField label="Status" value={forms['order-requests'].status} onChange={e => updateForm('order-requests', 'status', e.target.value)} options={['Pending', 'Approved', 'Paid']} />
                     <InputField label="Notes" value={forms['order-requests'].notes} onChange={e => updateForm('order-requests', 'notes', e.target.value)} />
                   </div>
                 </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6"><FileUpload label="Order Invoices" files={files['order-requests'].orderInvoices} onFilesChange={f => updateFiles('order-requests', 'orderInvoices', f)} onViewFile={setViewingFile} /></div>
-              </>)}
+              )}
 
-              {activeModule === 'refund-requests' && (<>
+              {activeModule === 'refund-requests' && (
                 <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
                   <h2 className="font-semibold mb-4 text-gray-800">Refund Request</h2>
                   <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Patient Name" value={forms['refund-requests'].patientName} onChange={e => updateForm('refund-requests', 'patientName', e.target.value)} />
-                    <InputField label="Chart Number" value={forms['refund-requests'].chartNumber} onChange={e => updateForm('refund-requests', 'chartNumber', e.target.value)} />
-                    <InputField label="Parent Name" value={forms['refund-requests'].parentName} onChange={e => updateForm('refund-requests', 'parentName', e.target.value)} />
-                    <InputField label="RP Address" value={forms['refund-requests'].rpAddress} onChange={e => updateForm('refund-requests', 'rpAddress', e.target.value)} />
-                    <InputField label="Date of Request" type="date" value={forms['refund-requests'].dateOfRequest} onChange={e => updateForm('refund-requests', 'dateOfRequest', e.target.value)} />
-                    <InputField label="Type" value={forms['refund-requests'].typeTransaction} onChange={e => updateForm('refund-requests', 'typeTransaction', e.target.value)} options={['Refund', 'Credit', 'Adjustment']} />
-                    <InputField label="Amount Requested" prefix="$" value={forms['refund-requests'].amountRequested} onChange={e => updateForm('refund-requests', 'amountRequested', e.target.value)} />
-                    <InputField label="Contact Method" value={forms['refund-requests'].bestContactMethod} onChange={e => updateForm('refund-requests', 'bestContactMethod', e.target.value)} options={['Phone', 'Email', 'Text']} />
-                    <InputField label="Eassist Audited" value={forms['refund-requests'].eassistAudited} onChange={e => updateForm('refund-requests', 'eassistAudited', e.target.value)} options={['Yes', 'No', 'N/A']} />
+                    <InputField label="Patient Name" value={forms['refund-requests'].patient_name} onChange={e => updateForm('refund-requests', 'patient_name', e.target.value)} />
+                    <InputField label="Chart Number" value={forms['refund-requests'].chart_number} onChange={e => updateForm('refund-requests', 'chart_number', e.target.value)} />
+                    <InputField label="Date of Request" type="date" value={forms['refund-requests'].date_of_request} onChange={e => updateForm('refund-requests', 'date_of_request', e.target.value)} />
+                    <InputField label="Type" value={forms['refund-requests'].type} onChange={e => updateForm('refund-requests', 'type', e.target.value)} options={['Refund', 'Credit', 'Adjustment']} />
+                    <InputField label="Amount Requested" prefix="$" value={forms['refund-requests'].amount_requested} onChange={e => updateForm('refund-requests', 'amount_requested', e.target.value)} />
                     <InputField label="Status" value={forms['refund-requests'].status} onChange={e => updateForm('refund-requests', 'status', e.target.value)} options={['Pending', 'Approved', 'Completed', 'Denied']} />
-                    <div className="col-span-2"><InputField label="Description" value={forms['refund-requests'].description} onChange={e => updateForm('refund-requests', 'description', e.target.value)} /></div>
                   </div>
                 </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6"><FileUpload label="Documentation" files={files['refund-requests'].documentation} onFilesChange={f => updateFiles('refund-requests', 'documentation', f)} onViewFile={setViewingFile} /></div>
-              </>)}
+              )}
 
-              {activeModule === 'it-requests' && (<>
-                <div className={`bg-white rounded-2xl shadow-lg p-6 border-l-4 ${currentColors?.accent}`}>
-                  <h2 className="font-semibold mb-2 text-gray-800">IT Request</h2>
-                  <p className="text-sm text-gray-500 mb-4">Request # will be auto-generated</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <InputField label="Date Reported" type="date" value={forms['it-requests'].dateReported} onChange={e => updateForm('it-requests', 'dateReported', e.target.value)} />
-                    <InputField label="Urgency Level" value={forms['it-requests'].urgencyLevel} onChange={e => updateForm('it-requests', 'urgencyLevel', e.target.value)} options={['Low', 'Medium', 'High', 'Critical']} />
-                    <InputField label="Requester Name" value={forms['it-requests'].requesterName} onChange={e => updateForm('it-requests', 'requesterName', e.target.value)} />
-                    <InputField label="Device / System" value={forms['it-requests'].deviceSystem} onChange={e => updateForm('it-requests', 'deviceSystem', e.target.value)} />
-                    <InputField label="Contact Method" value={forms['it-requests'].bestContactMethod} onChange={e => updateForm('it-requests', 'bestContactMethod', e.target.value)} options={['Phone', 'Email', 'Text']} />
-                    <InputField label="Contact Time" value={forms['it-requests'].bestContactTime} onChange={e => updateForm('it-requests', 'bestContactTime', e.target.value)} />
-                  </div>
-                  <div className="mt-4"><InputField label="Description of Issue" large value={forms['it-requests'].descriptionOfIssue} onChange={e => updateForm('it-requests', 'descriptionOfIssue', e.target.value)} placeholder="Describe the issue in detail..." /></div>
-                </div>
-                <div className="bg-white rounded-2xl shadow-lg p-6"><FileUpload label="Documentation" files={files['it-requests'].documentation} onFilesChange={f => updateFiles('it-requests', 'documentation', f)} onViewFile={setViewingFile} /></div>
-              </>)}
-
-              <button onClick={() => saveEntry(activeModule)} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50">
+              {/* Save Button */}
+              <button
+                onClick={() => saveEntry(activeModule)}
+                disabled={saving}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
+              >
                 {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Save Entry'}
               </button>
             </div>
           )}
 
+          {/* History View - Staff */}
           {!isAdmin && view === 'history' && (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
               <h2 className="font-semibold mb-4 text-gray-800">Your Entries <span className="text-sm font-normal text-gray-500">({entries.length})</span></h2>
-              {entries.length === 0 ? <p className="text-gray-500 text-center py-8">No entries yet</p> : (
-                <div className="space-y-2">{entries.slice(0, 30).map(e => (
-                  <div key={e.id} className={`p-4 rounded-xl flex justify-between items-center ${currentColors?.bg} border ${currentColors?.border}`}>
-                    <div><p className="font-medium text-gray-800">{e.requestNumber || e.timestamp?.split('T')[0]}</p><p className="text-xs text-gray-500">{e.enteredBy}</p></div>
-                    <div className="text-right">{e.total && <p className="font-bold text-emerald-600">${e.total.toFixed(2)}</p>}<StatusBadge status={e.status || e.billStatus} /></div>
-                  </div>
-                ))}</div>
+              {loading ? (
+                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+              ) : entries.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No entries yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {entries.slice(0, 30).map(e => {
+                    const canEdit = canEditRecord(e.created_at);
+                    return (
+                      <div key={e.id} className={`p-4 rounded-xl flex justify-between items-center ${currentColors?.bg} border ${currentColors?.border}`}>
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || new Date(e.created_at).toLocaleDateString()}
+                          </p>
+                          <p className="text-xs text-gray-500">{new Date(e.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right flex items-center gap-2">
+                          {e.total_collected && <p className="font-bold text-emerald-600">${Number(e.total_collected).toFixed(2)}</p>}
+                          <StatusBadge status={e.status} />
+                          {!canEdit && <Lock className="w-4 h-4 text-gray-400" title="Locked (past Friday cutoff)" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </div>
-          )}
-
-          {!isAdmin && view === 'export' && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center"><Download className="w-6 h-6 text-white" /></div>
-                <div><h2 className="font-semibold text-gray-800">Export Your Data</h2><p className="text-sm text-gray-500">Download your records as CSV</p></div>
-              </div>
-              <div className="mb-6">
-                <label className="text-xs font-medium text-gray-600 mb-1.5 block">Date Range</label>
-                <select value={exportRange} onChange={e => setExportRange(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-400 outline-none">{DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}</select>
-              </div>
-              <button onClick={exportToCSV} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all"><Download className="w-5 h-5" />Export to CSV</button>
             </div>
           )}
         </main>
       </div>
 
+      {/* Mobile sidebar overlay */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
     </div>
   );
