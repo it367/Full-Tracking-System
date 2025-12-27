@@ -395,32 +395,105 @@ export default function ClinicSystem() {
     setMessage('✓ Export complete!'); setTimeout(() => setMessage(''), 3000);
   };
 
-// NEW improved askAI function (from Step 3 artifact)
 const askAI = async () => {
-  if (!chatInput.trim()) return;
-  
-  const userMessage = chatInput;
-  setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-  // ... rest of the new function
-};
-
-// KEEP THESE - don't change them
-const getModuleEntries = (moduleId) => {
-  const entries = allData[moduleId] || [];
-  if (isAdmin && adminLocation !== 'all') return entries.filter(e => e.location === adminLocation);
-  if (!isAdmin && selectedLocation) return entries.filter(e => e.location === selectedLocation);
-  return entries;
-};
-
-const getFileCount = (entry) => entry.files ? Object.values(entry.files).reduce((sum, arr) => sum + (arr?.length || 0), 0) : 0;
-
-const getAllDocuments = () => {
-  const docs = [];
-  MODULES.forEach(m => { (allData[m.id] || []).forEach(entry => { if (entry.files) { Object.entries(entry.files).forEach(([cat, fileList]) => { (fileList || []).forEach(file => { docs.push({ ...file, module: m.name, location: entry.location, entryDate: entry.timestamp?.split('T')[0], enteredBy: entry.enteredBy, category: cat }); }); }); } }); });
-  return docs;
-};
-
-const currentColors = MODULE_COLORS[activeModule];
+    if (!chatInput.trim()) return;
+    
+    const userMessage = chatInput;
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setChatInput('');
+    setAiLoading(true);
+    
+    // Build comprehensive data summary for AI context
+    let dataSummary = '\n📊 SYSTEM OVERVIEW:\n';
+    
+    // Daily Recon Summary
+    const reconEntries = allData['daily-recon'] || [];
+    if (reconEntries.length > 0) {
+      const totalCash = reconEntries.reduce((sum, e) => sum + (e.total || 0), 0);
+      const totalDeposits = reconEntries.reduce((sum, e) => sum + (e.depositTotal || 0), 0);
+      dataSummary += `\n💰 DAILY RECON (${reconEntries.length} entries):`;
+      dataSummary += `\n   - Total Cash Collected: $${totalCash.toFixed(2)}`;
+      dataSummary += `\n   - Total Deposits: $${totalDeposits.toFixed(2)}`;
+    }
+    
+    // Billing Inquiry Summary
+    const billingEntries = allData['billing-inquiry'] || [];
+    if (billingEntries.length > 0) {
+      const pending = billingEntries.filter(e => e.status === 'Pending').length;
+      const inProgress = billingEntries.filter(e => e.status === 'In Progress').length;
+      const resolved = billingEntries.filter(e => e.status === 'Resolved').length;
+      dataSummary += `\n\n🧾 BILLING INQUIRIES (${billingEntries.length} total):`;
+      dataSummary += `\n   - Pending: ${pending}, In Progress: ${inProgress}, Resolved: ${resolved}`;
+    }
+    
+    // Bills Payment Summary
+    const billsEntries = allData['bills-payment'] || [];
+    if (billsEntries.length > 0) {
+      const unpaid = billsEntries.filter(e => e.paid !== 'Yes').length;
+      const totalAmount = billsEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      dataSummary += `\n\n💳 BILLS PAYMENT (${billsEntries.length} total):`;
+      dataSummary += `\n   - Unpaid bills: ${unpaid}`;
+      dataSummary += `\n   - Total amount: $${totalAmount.toFixed(2)}`;
+    }
+    
+    // Order Requests Summary
+    const orderEntries = allData['order-requests'] || [];
+    if (orderEntries.length > 0) {
+      const totalOrders = orderEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      dataSummary += `\n\n📦 ORDER REQUESTS (${orderEntries.length} total):`;
+      dataSummary += `\n   - Total order value: $${totalOrders.toFixed(2)}`;
+    }
+    
+    // Refund Requests Summary
+    const refundEntries = allData['refund-requests'] || [];
+    if (refundEntries.length > 0) {
+      const pendingRefunds = refundEntries.filter(e => e.status === 'Pending').length;
+      const totalRefunds = refundEntries.reduce((sum, e) => sum + (parseFloat(e.amountRequested) || 0), 0);
+      dataSummary += `\n\n🔄 REFUND REQUESTS (${refundEntries.length} total):`;
+      dataSummary += `\n   - Pending: ${pendingRefunds}`;
+      dataSummary += `\n   - Total requested: $${totalRefunds.toFixed(2)}`;
+    }
+    
+    // IT Requests Summary
+    const itEntries = allData['it-requests'] || [];
+    if (itEntries.length > 0) {
+      const open = itEntries.filter(e => e.status === 'Open').length;
+      const inProgress = itEntries.filter(e => e.status === 'In Progress').length;
+      const critical = itEntries.filter(e => e.urgencyLevel === 'Critical' && e.status !== 'Closed').length;
+      dataSummary += `\n\n🖥️ IT REQUESTS (${itEntries.length} total):`;
+      dataSummary += `\n   - Open: ${open}, In Progress: ${inProgress}`;
+      dataSummary += `\n   - Critical issues: ${critical}`;
+    }
+    
+    // Location info
+    dataSummary += `\n\n📍 LOCATIONS: ${LOCATIONS.join(', ')}`;
+    dataSummary += `\n👤 Current user: ${currentUser?.name || 'Unknown'}`;
+    dataSummary += `\n📍 Current location filter: ${isAdmin ? adminLocation : selectedLocation}`;
+    
+    try {
+      const response = await fetch('/api/chat', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          messages: [{ role: 'user', content: userMessage }], 
+          dataSummary 
+        }) 
+      });
+      
+      const data = await response.json();
+      const aiResponse = data.content?.[0]?.text || 'Sorry, I could not process that request.';
+      setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+      
+    } catch (error) {
+      console.error('AI Chat error:', error);
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: '❌ Unable to connect to AI. Please check your connection and try again.' 
+      }]);
+    }
+    
+    setAiLoading(false);
+  };
 
   // ========== LOGIN ==========
   if (!currentUser) {
