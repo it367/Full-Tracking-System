@@ -18,8 +18,3 @@
     "autoprefixer": "10.4.16"
   }
 }
-```
-
-**The only change:** I added line 11:
-```
-"@supabase/supabase-js": "^2.39.0",
