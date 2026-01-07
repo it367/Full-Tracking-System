@@ -900,10 +900,25 @@ const { data: createdUser, error } = await supabase
     loadUsers();
   };
 
-  const updateUser = async () => {
+const updateUser = async () => {
     if (!editingUser.name || !editingUser.email) {
       showMessage('error', 'Please fill all required fields');
       return;
+    }
+
+    // Check if username is taken by another user (if username provided)
+    if (editingUser.username) {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', editingUser.username.toLowerCase())
+        .neq('id', editingUser.id)
+        .maybeSingle();
+      
+      if (existingUser) {
+        showMessage('error', 'Username already taken by another user');
+        return;
+      }
     }
 
     const updateData = {
@@ -912,6 +927,11 @@ const { data: createdUser, error } = await supabase
       role: editingUser.role,
       updated_by: currentUser.id
     };
+
+    // Only update username if provided
+    if (editingUser.username) {
+      updateData.username = editingUser.username.toLowerCase();
+    }
 
     if (editingUser.newPassword) {
       updateData.password_hash = editingUser.newPassword;
