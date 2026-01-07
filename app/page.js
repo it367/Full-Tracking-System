@@ -345,6 +345,9 @@ const [currentPage, setCurrentPage] = useState(1);
 const [nameForm, setNameForm] = useState('');
   const [editingStaffEntry, setEditingStaffEntry] = useState(null);
 const [staffEditForm, setStaffEditForm] = useState({});
+  const [viewingUserSessions, setViewingUserSessions] = useState(null);
+const [userSessionsData, setUserSessionsData] = useState([]);
+const [loadingUserSessions, setLoadingUserSessions] = useState(false);
   const [staffRecordSearch, setStaffRecordSearch] = useState('');
 const [staffSortOrder, setStaffSortOrder] = useState('desc');
 const [staffRecordsPerPage, setStaffRecordsPerPage] = useState(20);
@@ -515,9 +518,10 @@ useEffect(() => { setCurrentPage(1); setRecordSearch(''); }, [activeModule, admi
     console.log('Loading users...');
     
     // Get all users without any joins
-    const { data: usersData, error: usersError } = await supabase
+const { data: usersData, error: usersError } = await supabase
       .from('users')
       .select('*')
+      .eq('is_active', true)
       .order('name');
     
     if (usersError) {
@@ -745,6 +749,19 @@ const loadLoginHistory = async (userId) => {
   
   if (data) setLoginHistory(data);
 };
+
+  const loadUserSessions = async (userId) => {
+  setLoadingUserSessions(true);
+  const { data } = await supabase
+    .from('login_activity')
+    .select('*')
+    .eq('user_id', userId)
+    .order('login_at', { ascending: false })
+    .limit(20);
+  
+  setUserSessionsData(data || []);
+  setLoadingUserSessions(false);
+};
   
 const handleLogin = async () => {
   if (!loginEmail || !loginPassword) {
@@ -962,14 +979,22 @@ const updateUser = async () => {
     loadUsers();
   };
 
-  const deleteUser = async (id) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+const deleteUser = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
     
-    await supabase.from('users').update({ is_active: false, updated_by: currentUser.id }).eq('id', id);
+    const { error } = await supabase
+      .from('users')
+      .update({ is_active: false, updated_by: currentUser.id })
+      .eq('id', id);
+    
+    if (error) {
+      showMessage('error', 'Failed to delete user: ' + error.message);
+      return;
+    }
+    
     showMessage('success', '✓ User deleted');
     loadUsers();
   };
-
   const toggleUserLocation = (locId, isEditing = false) => {
     if (isEditing) {
       const locs = editingUser.locationIds || [];
@@ -2015,46 +2040,99 @@ if (!currentUser) {
 
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="divide-y">
-                  {users.map(u => (
-                    <div key={u.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold ${u.role === 'super_admin' ? 'bg-gradient-to-br from-rose-500 to-pink-500' : u.role === 'finance_admin' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' : 'bg-gradient-to-br from-blue-500 to-indigo-500'}`}>
-                          {u.name.charAt(0)}
+ {users.map(u => (
+                    <div key={u.id}>
+                      <div className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold ${u.role === 'super_admin' ? 'bg-gradient-to-br from-rose-500 to-pink-500' : u.role === 'finance_admin' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' : 'bg-gradient-to-br from-blue-500 to-indigo-500'}`}>
+                            {u.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-800">{u.name}</p>
+                            <p className="text-sm text-gray-500">{u.username && <span className="text-blue-600">@{u.username} • </span>}{u.email} • <span className="capitalize">{u.role?.replace('_', ' ')}</span></p>
+                            {u.role === 'staff' && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {u.locations?.map(loc => (
+                                  <span key={loc.id} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">{loc.name}</span>
+                                ))}
+                              </div>
+                            )}
+                            {(u.role === 'finance_admin' || u.role === 'super_admin') && (
+                              <span className="text-xs text-purple-600 font-medium">All locations access</span>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-800">{u.name}</p>
-                          <p className="text-sm text-gray-500">{u.email} • <span className="capitalize">{u.role?.replace('_', ' ')}</span></p>
-                          {u.role === 'staff' && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {u.locations?.map(loc => (
-                                <span key={loc.id} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">{loc.name}</span>
-                              ))}
-                            </div>
-                          )}
-                          {(u.role === 'finance_admin' || u.role === 'super_admin') && (
-                            <span className="text-xs text-purple-600 font-medium">All locations access</span>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              setViewingUserSessions(viewingUserSessions === u.id ? null : u.id);
+                              if (viewingUserSessions !== u.id) loadUserSessions(u.id);
+                            }}
+                            className={`p-2 rounded-lg transition-all ${viewingUserSessions === u.id ? 'text-cyan-600 bg-cyan-50' : 'text-gray-400 hover:text-cyan-600 hover:bg-cyan-50'}`}
+                            title="View login sessions"
+                          >
+                            <Monitor className="w-4 h-4" />
+                          </button>
+                          {u.id !== currentUser.id && (
+                            <>
+                              <button
+                                onClick={() => setEditingUser({ ...u, username: u.username || '', locationIds: u.locations?.map(l => l.id) || [] })}
+                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                title="Edit user"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => deleteUser(u.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete user">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
-                      {u.id !== currentUser.id && (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => setEditingUser({ ...u, locationIds: u.locations?.map(l => l.id) || [] })}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => deleteUser(u.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                      
+                      {/* Login Sessions Dropdown */}
+                      {viewingUserSessions === u.id && (
+                        <div className="px-4 pb-4">
+                          <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-cyan-800 flex items-center gap-2">
+                                <Monitor className="w-4 h-4" /> Login Sessions for {u.name}
+                              </h4>
+                              <button onClick={() => setViewingUserSessions(null)} className="text-cyan-600 hover:text-cyan-800">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            {loadingUserSessions ? (
+                              <div className="flex justify-center py-4">
+                                <Loader2 className="w-5 h-5 animate-spin text-cyan-600" />
+                              </div>
+                            ) : userSessionsData.length === 0 ? (
+                              <p className="text-sm text-cyan-700 text-center py-4">No login sessions recorded</p>
+                            ) : (
+                              <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {userSessionsData.map((session, idx) => (
+                                  <div key={session.id} className={`p-3 rounded-lg ${idx === 0 ? 'bg-emerald-100 border border-emerald-300' : 'bg-white border border-cyan-100'}`}>
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-800">
+                                          {new Date(session.login_at).toLocaleString()}
+                                          {idx === 0 && <span className="ml-2 text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full">Latest</span>}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-0.5">{session.location_info || 'Unknown device'}</p>
+                                      </div>
+                                      {session.ip_address && (
+                                        <span className="text-xs text-gray-400 font-mono">{session.ip_address}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
                   ))}
-                </div>
-              </div>
-            </div>
-          )}
 
 {/* ADMIN: Documents */}
 {isAdmin && adminView === 'documents' && (
