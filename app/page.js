@@ -317,7 +317,9 @@ export default function ClinicSystem() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [showLoginPwd, setShowLoginPwd] = useState(false);
-
+const [rememberMe, setRememberMe] = useState(false);
+const [lastLogin, setLastLogin] = useState(null);
+const [loginHistory, setLoginHistory] = useState([]);
   const [locations, setLocations] = useState([]);
   const [users, setUsers] = useState([]);
   const [activeModule, setActiveModule] = useState('daily-recon');
@@ -396,7 +398,90 @@ const [nameForm, setNameForm] = useState('');
     'it-requests': { documentation: [] }
   });
 
-  useEffect(() => { loadLocations(); }, []);
+useEffect(() => {
+  loadLocations();
+  
+  // Check for saved session on mount
+  const savedSession = localStorage.getItem('cms_session') || sessionStorage.getItem('cms_session');
+  if (savedSession) {
+    try {
+      const sessionData = JSON.parse(savedSession);
+      
+      // Check if session has expired
+      if (sessionData.expiresAt && new Date(sessionData.expiresAt) < new Date()) {
+        // Session expired - clear it
+        localStorage.removeItem('cms_session');
+        sessionStorage.removeItem('cms_session');
+        return;
+      }
+      
+      // Verify session is still valid
+      if (sessionData.user && sessionData.user.id) {
+        setCurrentUser(sessionData.user);
+        setUserLocations(sessionData.userLocations || []);
+        if (sessionData.selectedLocation) {
+          setSelectedLocation(sessionData.selectedLocation);
+        }
+        setLastLogin(sessionData.lastLogin);
+        // Load users if admin
+        if (sessionData.user.role === 'super_admin' || sessionData.user.role === 'finance_admin') {
+          loadUsers();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to restore session:', e);
+      localStorage.removeItem('cms_session');
+      sessionStorage.removeItem('cms_session');
+    }
+  }
+  
+  // Multi-tab sync: Listen for storage changes
+  const handleStorageChange = (e) => {
+    if (e.key === 'cms_session') {
+      if (e.newValue === null) {
+        // Session was cleared in another tab - log out here too
+        setCurrentUser(null);
+        setUserLocations([]);
+        setSelectedLocation(null);
+        setLoginEmail('');
+        setLoginPassword('');
+        setView('entry');
+        setAdminView('records');
+        setModuleData({});
+        setChatMessages([{ role: 'assistant', content: "👋 Hi! I'm your AI assistant." }]);
+      } else if (e.newValue) {
+        // Session was created/updated in another tab - sync here
+        try {
+          const sessionData = JSON.parse(e.newValue);
+          if (sessionData.user) {
+            setCurrentUser(sessionData.user);
+            setUserLocations(sessionData.userLocations || []);
+            if (sessionData.selectedLocation) {
+              setSelectedLocation(sessionData.selectedLocation);
+            }
+            setLastLogin(sessionData.lastLogin);
+            if (sessionData.user.role === 'super_admin' || sessionData.user.role === 'finance_admin') {
+              loadUsers();
+            }
+          }
+        } catch (err) {
+          console.error('Failed to sync session:', err);
+        }
+      }
+    }
+    // Handle explicit logout broadcast
+    if (e.key === 'cms_logout') {
+      setCurrentUser(null);
+      setUserLocations([]);
+      setSelectedLocation(null);
+      setModuleData({});
+      setChatMessages([{ role: 'assistant', content: "👋 Hi! I'm your AI assistant." }]);
+    }
+  };
+  
+  window.addEventListener('storage', handleStorageChange);
+  return () => window.removeEventListener('storage', handleStorageChange);
+}, []);
 useEffect(() => { if (currentUser) setNameForm(currentUser.name || ''); }, [currentUser]);
   useEffect(() => {
     if (currentUser && (selectedLocation || isAdmin)) {
@@ -550,89 +635,212 @@ useEffect(() => { setCurrentPage(1); setRecordSearch(''); }, [activeModule, admi
     setLoading(false);
   };
 
-  const handleLogin = async () => {
-    if (!loginEmail || !loginPassword) {
-      showMessage('error', 'Please enter email and password');
+  const saveSession = (user, locations, selectedLoc, lastLoginInfo, remember) => {
+  const sessionData = {
+    user,
+    userLocations: locations,
+    selectedLocation: selectedLoc,
+    lastLogin: lastLoginInfo,
+    savedAt: new Date().toISOString(),
+    expiresAt: remember 
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
+      : null // Session storage handles expiry on browser close
+  };
+  
+  if (remember) {
+    localStorage.setItem('cms_session', JSON.stringify(sessionData));
+    sessionStorage.removeItem('cms_session');
+  } else {
+    sessionStorage.setItem('cms_session', JSON.stringify(sessionData));
+    localStorage.removeItem('cms_session');
+  }
+};
+
+const clearSession = () => {
+  localStorage.removeItem('cms_session');
+  sessionStorage.removeItem('cms_session');
+  // Broadcast logout to other tabs
+  localStorage.setItem('cms_logout', Date.now().toString());
+  localStorage.removeItem('cms_logout');
+};
+
+const logLoginActivity = async (userId) => {
+  try {
+    // Get user agent info
+    const userAgent = navigator.userAgent;
+    let deviceInfo = 'Unknown Device';
+    
+    if (/mobile/i.test(userAgent)) {
+      deviceInfo = 'Mobile Device';
+      if (/iPhone/i.test(userAgent)) deviceInfo = 'iPhone';
+      else if (/iPad/i.test(userAgent)) deviceInfo = 'iPad';
+      else if (/Android/i.test(userAgent)) deviceInfo = 'Android Device';
+    } else {
+      deviceInfo = 'Desktop';
+      if (/Windows/i.test(userAgent)) deviceInfo = 'Windows PC';
+      else if (/Mac/i.test(userAgent)) deviceInfo = 'Mac';
+      else if (/Linux/i.test(userAgent)) deviceInfo = 'Linux PC';
+    }
+    
+    // Get browser info
+    let browser = 'Unknown Browser';
+    if (/Chrome/i.test(userAgent) && !/Edg/i.test(userAgent)) browser = 'Chrome';
+    else if (/Safari/i.test(userAgent) && !/Chrome/i.test(userAgent)) browser = 'Safari';
+    else if (/Firefox/i.test(userAgent)) browser = 'Firefox';
+    else if (/Edg/i.test(userAgent)) browser = 'Edge';
+    
+    const locationInfo = `${deviceInfo} - ${browser}`;
+    
+    // Try to get IP (this will only work with an external service)
+    let ipAddress = null;
+    try {
+      const ipResponse = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipResponse.json();
+      ipAddress = ipData.ip;
+    } catch (e) {
+      console.log('Could not fetch IP address');
+    }
+    
+    // Insert login activity
+    await supabase.from('login_activity').insert({
+      user_id: userId,
+      ip_address: ipAddress,
+      user_agent: userAgent.substring(0, 500),
+      location_info: locationInfo
+    });
+    
+    return { ipAddress, locationInfo, login_at: new Date().toISOString() };
+  } catch (e) {
+    console.error('Login activity error:', e);
+    return null;
+  }
+};
+
+const getLastLoginForUser = async (userId) => {
+  const { data } = await supabase
+    .from('login_activity')
+    .select('login_at, location_info, ip_address')
+    .eq('user_id', userId)
+    .order('login_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  return data;
+};
+
+const loadLoginHistory = async (userId) => {
+  const { data } = await supabase
+    .from('login_activity')
+    .select('*')
+    .eq('user_id', userId)
+    .order('login_at', { ascending: false })
+    .limit(10);
+  
+  if (data) setLoginHistory(data);
+};
+  
+const handleLogin = async () => {
+  if (!loginEmail || !loginPassword) {
+    showMessage('error', 'Please enter email and password');
+    return;
+  }
+
+  setLoginLoading(true);
+  
+  try {
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', loginEmail.toLowerCase())
+      .eq('password_hash', loginPassword)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (userError) {
+      console.error('Login error:', userError);
+      showMessage('error', 'Login failed. Please try again.');
+      setLoginLoading(false);
       return;
     }
 
-    setLoginLoading(true);
-    
-    try {
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', loginEmail.toLowerCase())
-        .eq('password_hash', loginPassword)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (userError) {
-        console.error('Login error:', userError);
-        showMessage('error', 'Login failed. Please try again.');
-        setLoginLoading(false);
-        return;
-      }
-
-      if (!user) {
-        showMessage('error', 'Invalid email or password');
-        setLoginLoading(false);
-        return;
-      }
-
-      // Get user_locations separately without joins
-      const { data: userLocsData } = await supabase
-        .from('user_locations')
-        .select('location_id')
-        .eq('user_id', user.id);
-      
-      // Get location details
-      const locIds = userLocsData?.map(ul => ul.location_id) || [];
-      let locationsList = [];
-      if (locIds.length > 0) {
-        const { data: locsData } = await supabase
-          .from('locations')
-          .select('id, name')
-          .in('id', locIds);
-        locationsList = locsData || [];
-      }
-
-      await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
-
-      setCurrentUser(user);
-      setUserLocations(locationsList);
-
-      if (locationsList.length === 1) {
-        setSelectedLocation(locationsList[0].name);
-      }
-
-      if (user.role === 'super_admin' || user.role === 'finance_admin') {
-        loadUsers();
-      }
-
-    } catch (err) {
-      console.error('Login exception:', err);
-      showMessage('error', 'An error occurred. Please try again.');
+    if (!user) {
+      showMessage('error', 'Invalid email or password');
+      setLoginLoading(false);
+      return;
     }
 
-    setLoginLoading(false);
-  };
+    // Get last login BEFORE logging new activity
+    const previousLogin = await getLastLoginForUser(user.id);
+    setLastLogin(previousLogin);
+
+    // Log this login activity
+    await logLoginActivity(user.id);
+
+    // Get user_locations separately without joins
+    const { data: userLocsData } = await supabase
+      .from('user_locations')
+      .select('location_id')
+      .eq('user_id', user.id);
+    
+    // Get location details
+    const locIds = userLocsData?.map(ul => ul.location_id) || [];
+    let locationsList = [];
+    if (locIds.length > 0) {
+      const { data: locsData } = await supabase
+        .from('locations')
+        .select('id, name')
+        .in('id', locIds);
+      locationsList = locsData || [];
+    }
+
+    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
+
+    const selectedLoc = locationsList.length === 1 ? locationsList[0].name : null;
+
+    // Save session (with or without "Remember Me")
+    saveSession(user, locationsList, selectedLoc, previousLogin, rememberMe);
+
+    setCurrentUser(user);
+    setUserLocations(locationsList);
+
+    if (selectedLoc) {
+      setSelectedLocation(selectedLoc);
+    }
+
+    if (user.role === 'super_admin' || user.role === 'finance_admin') {
+      loadUsers();
+      loadLoginHistory(user.id);
+    }
+
+    showMessage('success', '✓ Login successful!');
+
+  } catch (err) {
+    console.error('Login exception:', err);
+    showMessage('error', 'An error occurred. Please try again.');
+  }
+
+  setLoginLoading(false);
+};
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    setUserLocations([]);
-    setSelectedLocation(null);
-    setLoginEmail('');
-    setLoginPassword('');
-    setView('entry');
-    setAdminView('records');
-    setPwdForm({ current: '', new: '', confirm: '' });
-    setChatMessages([{
-      role: 'assistant',
-      content: "👋 Hi! I'm your AI assistant. I can help with:\n\n• Data summaries & reports\n• Weekly comparisons\n• Location analytics\n• IT request status\n\nWhat would you like to know?"
-    }]);
-    setModuleData({});
-  };
+  clearSession();
+  setCurrentUser(null);
+  setUserLocations([]);
+  setSelectedLocation(null);
+  setLoginEmail('');
+  setLoginPassword('');
+  setRememberMe(false);
+  setLastLogin(null);
+  setLoginHistory([]);
+  setView('entry');
+  setAdminView('records');
+  setPwdForm({ current: '', new: '', confirm: '' });
+  setChatMessages([{
+    role: 'assistant',
+    content: "👋 Hi! I'm your AI assistant. I can help with:\n\n• Data summaries & reports\n• Weekly comparisons\n• Location analytics\n• IT request status\n\nWhat would you like to know?"
+  }]);
+  setModuleData({});
+};
 
   const addUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
@@ -1239,66 +1447,89 @@ const getTotalPages = () => {
     return mod?.name || moduleId;
   };
 
-  // LOGIN SCREEN
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-              <Building2 className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">CMS - KidShine Hawaii</h1>
-            <p className="text-gray-500 text-sm mt-1">Clinic Management Portal</p>
+// LOGIN SCREEN
+if (!currentUser) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
+            <Building2 className="w-10 h-10 text-white" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-800">CMS - KidShine Hawaii</h1>
+          <p className="text-gray-500 text-sm mt-1">Clinic Management Portal</p>
+        </div>
 
-          {message.text && (
-            <div className={`mb-4 p-3 rounded-xl text-sm flex items-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
-              <AlertCircle className="w-4 h-4" />
-              {message.text}
-            </div>
-          )}
+        {message.text && (
+          <div className={`mb-4 p-3 rounded-xl text-sm flex items-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+            <AlertCircle className="w-4 h-4" />
+            {message.text}
+          </div>
+        )}
 
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email / Username</label>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email / Username</label>
+            <input
+              type="text"
+              value={loginEmail}
+              onChange={e => setLoginEmail(e.target.value)}
+              className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all"
+              placeholder="Enter email"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
+            <div className="flex items-center border-2 border-gray-200 rounded-xl bg-white transition-all hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-100">
               <input
-                type="text"
-                value={loginEmail}
-                onChange={e => setLoginEmail(e.target.value)}
-                className="w-full p-3.5 border-2 border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all"
-                placeholder="Enter email"
+                type={showLoginPwd ? 'text' : 'password'}
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="w-full p-3.5 rounded-xl outline-none bg-transparent"
+                placeholder="Enter password"
               />
+              <button type="button" onClick={() => setShowLoginPwd(!showLoginPwd)} className="px-4 text-gray-400 hover:text-gray-600">
+                {showLoginPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
-              <div className="flex items-center border-2 border-gray-200 rounded-xl bg-white transition-all hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-100">
-                <input
-                  type={showLoginPwd ? 'text' : 'password'}
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                  className="w-full p-3.5 rounded-xl outline-none bg-transparent"
-                  placeholder="Enter password"
-                />
-                <button type="button" onClick={() => setShowLoginPwd(!showLoginPwd)} className="px-4 text-gray-400 hover:text-gray-600">
-                  {showLoginPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={handleLogin}
-              disabled={loginLoading}
-              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold hover:shadow-lg hover:shadow-blue-500/30 transition-all disabled:opacity-50"
-            >
-              {loginLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Login →'}
-            </button>
-            <p className="text-xs text-center text-gray-400">BETA Version 0.21</p>
           </div>
+          
+          {/* Remember Me Checkbox */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRememberMe(!rememberMe)}
+              className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${rememberMe ? 'bg-blue-600 border-blue-600' : 'border-gray-300 hover:border-blue-400'}`}
+            >
+              {rememberMe && (
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+            <label 
+              onClick={() => setRememberMe(!rememberMe)}
+              className="text-sm text-gray-600 cursor-pointer select-none"
+            >
+              Stay logged in for 30 days
+            </label>
+          </div>
+          
+          <button
+            onClick={handleLogin}
+            disabled={loginLoading}
+            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-lg font-semibold hover:shadow-lg hover:shadow-blue-500/30 transition-all disabled:opacity-50"
+          >
+            {loginLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Login →'}
+          </button>
+          
+          <p className="text-xs text-center text-gray-400">BETA Version 0.23</p>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // LOCATION SELECTION
   if (!isAdmin && !selectedLocation && userLocations.length > 1) {
@@ -1699,10 +1930,27 @@ const getTotalPages = () => {
             </div>
           )}
 
-          {/* Settings */}
 {/* Settings */}
 {((isAdmin && adminView === 'settings') || (!isAdmin && view === 'settings')) && (
   <div className="space-y-6">
+    {/* Last Login Info */}
+    {lastLogin && (
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl shadow-lg p-6 border border-blue-100">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+            <Shield className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-800">Last Login</h3>
+            <p className="text-sm text-gray-500">
+              {new Date(lastLogin.login_at).toLocaleString()} • {lastLogin.location_info}
+              {lastLogin.ip_address && <span className="text-gray-400"> • IP: {lastLogin.ip_address}</span>}
+            </p>
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* Name Change Section */}
     <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
       <div className="flex items-center gap-3 mb-6">
@@ -1739,6 +1987,55 @@ const getTotalPages = () => {
         <PasswordField label="Confirm New Password" value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} placeholder="Confirm new password" />
         <button onClick={changePassword} className={`w-full py-4 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all ${isAdmin ? 'bg-gradient-to-r from-purple-600 to-indigo-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
           Update Password
+        </button>
+      </div>
+    </div>
+
+    {/* Login History (Admin Only) */}
+    {isAdmin && loginHistory.length > 0 && (
+      <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+            <FileText className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-800">Login History</h2>
+            <p className="text-sm text-gray-500">Your recent login activity</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {loginHistory.map((login, i) => (
+            <div key={login.id} className={`p-3 rounded-xl ${i === 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">
+                    {new Date(login.login_at).toLocaleString()}
+                    {i === 0 && <span className="ml-2 text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full">Current</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{login.location_info}</p>
+                </div>
+                {login.ip_address && (
+                  <span className="text-xs text-gray-400 font-mono">{login.ip_address}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* Session Info */}
+    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+          <span className="text-sm text-gray-600">Session Active</span>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="text-sm text-red-600 font-medium hover:text-red-700 hover:underline"
+        >
+          Sign out of all devices
         </button>
       </div>
     </div>
