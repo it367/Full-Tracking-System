@@ -965,6 +965,71 @@ if (moduleId === 'daily-recon') {
     setSaving(false);
   };
 
+  const updateDailyRecon = async (entryId) => {
+  if (!reconForm[entryId]) return;
+  
+  const form = reconForm[entryId];
+  const updateData = {
+    deposit_cash: parseFloat(form.deposit_cash) || 0,
+    deposit_credit_card: parseFloat(form.deposit_credit_card) || 0,
+    deposit_checks: parseFloat(form.deposit_checks) || 0,
+    deposit_insurance: parseFloat(form.deposit_insurance) || 0,
+    deposit_care_credit: parseFloat(form.deposit_care_credit) || 0,
+    deposit_vcc: parseFloat(form.deposit_vcc) || 0,
+    deposit_efts: parseFloat(form.deposit_efts) || 0,
+    status: form.status || 'Pending',
+    reviewed_by: currentUser.id,
+    reviewed_at: new Date().toISOString(),
+    updated_by: currentUser.id
+  };
+
+  const { error } = await supabase
+    .from('daily_recon')
+    .update(updateData)
+    .eq('id', entryId);
+
+  if (error) {
+    showMessage('error', 'Failed to update record');
+    return;
+  }
+
+  showMessage('success', '✓ Daily Recon updated!');
+  setEditingRecon(null);
+  setReconForm(prev => {
+    const newForm = { ...prev };
+    delete newForm[entryId];
+    return newForm;
+  });
+  loadModuleData('daily-recon');
+};
+
+const startEditingRecon = (entry) => {
+  setEditingRecon(entry.id);
+  setReconForm(prev => ({
+    ...prev,
+    [entry.id]: {
+      deposit_cash: entry.deposit_cash || '',
+      deposit_credit_card: entry.deposit_credit_card || '',
+      deposit_checks: entry.deposit_checks || '',
+      deposit_insurance: entry.deposit_insurance || '',
+      deposit_care_credit: entry.deposit_care_credit || '',
+      deposit_vcc: entry.deposit_vcc || '',
+      deposit_efts: entry.deposit_efts || '',
+      status: entry.status || 'Pending'
+    }
+  }));
+};
+
+const updateReconForm = (entryId, field, value) => {
+  setReconForm(prev => ({
+    ...prev,
+    [entryId]: {
+      ...prev[entryId],
+      [field]: value
+    }
+  }));
+};
+  
   const updateEntryStatus = async (moduleId, entryId, newStatus, additionalFields = {}) => {
     const module = ALL_MODULES.find(m => m.id === moduleId);
 
@@ -1620,95 +1685,255 @@ if (moduleId === 'daily-recon') {
   </div>
 )}
 
-          {/* Records View - Admin */}
-          {isAdmin && adminView === 'records' && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-800">All Records</h2>
-                <span className={`text-sm font-medium px-3 py-1 rounded-lg ${currentColors?.light} ${currentColors?.text}`}>{entries.length} entries</span>
-              </div>
-              {loading ? (
-                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
-              ) : entries.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No entries yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {entries.slice(0, 50).map(e => {
-                    const docKey = `${activeModule}-${e.id}`;
-                    const docs = entryDocuments[docKey] || [];
-                    
-                    if (!entryDocuments[docKey]) {
-                      loadEntryDocuments(activeModule, e.id);
-                    }
-                    
-                    return (
-                      <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all`}>
-                        <div className="flex justify-between items-start gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-gray-800">
-                                {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || e.created_at?.split('T')[0]}
-                              </p>
-                              <StatusBadge status={e.status} />
-                            </div>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
-                            </p>
-                            {e.description_of_issue && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.description_of_issue}</p>}
-                            {e.total_collected && <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>}
-                            
-                            {/* Documents for this entry */}
-                            {docs.length > 0 && (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {docs.map(doc => (
-                                  <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
-                                    <File className="w-3 h-3 text-gray-400" />
-                                    <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
-                                    <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
-                                      <Eye className="w-3 h-3" />
-                                    </button>
-                                    <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
-                                      <Download className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+     {/* Records View - Admin */}
+{isAdmin && adminView === 'records' && (
+  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="font-semibold text-gray-800">All Records</h2>
+      <span className={`text-sm font-medium px-3 py-1 rounded-lg ${currentColors?.light} ${currentColors?.text}`}>{entries.length} entries</span>
+    </div>
+    {loading ? (
+      <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+    ) : entries.length === 0 ? (
+      <p className="text-gray-500 text-center py-8">No entries yet</p>
+    ) : (
+      <div className="space-y-3">
+        {entries.slice(0, 50).map(e => {
+          const docKey = `${activeModule}-${e.id}`;
+          const docs = entryDocuments[docKey] || [];
+          
+          if (!entryDocuments[docKey]) {
+            loadEntryDocuments(activeModule, e.id);
+          }
+          
+          // Special handling for Daily Recon
+          if (activeModule === 'daily-recon') {
+            const isEditing = editingRecon === e.id;
+            const form = reconForm[e.id] || {};
+            
+            return (
+              <div key={e.id} className={`p-4 rounded-xl border-2 ${e.status === 'Accounted' ? 'border-emerald-200 bg-emerald-50' : e.status === 'Rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'} hover:shadow-md transition-all`}>
+                <div className="flex justify-between items-start gap-4 mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-gray-800">{e.recon_date}</p>
+                      <StatusBadge status={e.status || 'Pending'} />
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  {!isEditing && (
+                    <button
+                      onClick={() => startEditingRecon(e)}
+                      className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <Edit3 className="w-4 h-4" /> Review
+                    </button>
+                  )}
+                </div>
 
-                          {activeModule === 'it-requests' && (
-                            <div>
-                              {editingStatus === e.id ? (
-                                <div className="space-y-2 w-44">
-                                  <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                                    {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
-                                  <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" className="w-full p-2 border-2 rounded-lg text-sm" />
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { resolution_notes: document.getElementById(`notes-${e.id}`).value })}
-                                      className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
-                                    >
-                                      Save
-                                    </button>
-                                    <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button onClick={() => setEditingStatus(e.id)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline">
-                                  <Edit3 className="w-3 h-3" />Update
-                                </button>
-                              )}
-                            </div>
-                          )}
+                {/* Staff's Cash Can Data (Read Only) */}
+                <div className="bg-white rounded-xl p-4 mb-3 border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-500" /> Staff Daily Cash Can
+                  </h4>
+                  <div className="grid grid-cols-4 gap-3 text-sm">
+                    <div><span className="text-gray-500">Cash:</span> <span className="font-medium">${Number(e.cash || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">Credit Card:</span> <span className="font-medium">${Number(e.credit_card || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">Checks OTC:</span> <span className="font-medium">${Number(e.checks_otc || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">Insurance:</span> <span className="font-medium">${Number(e.insurance_checks || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">Care Credit:</span> <span className="font-medium">${Number(e.care_credit || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">VCC:</span> <span className="font-medium">${Number(e.vcc || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500">EFTs:</span> <span className="font-medium">${Number(e.efts || 0).toFixed(2)}</span></div>
+                    <div><span className="text-gray-500 font-semibold">Total:</span> <span className="font-bold text-emerald-600">${Number(e.total_collected || 0).toFixed(2)}</span></div>
+                  </div>
+                  {e.notes && <p className="mt-2 text-sm text-gray-600"><span className="text-gray-500">Notes:</span> {e.notes}</p>}
+                </div>
+
+                {/* Bank Deposit Section (Editable by Admin) */}
+                {isEditing ? (
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                      <Building2 className="w-4 h-4" /> Bank Deposit (Admin Entry)
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Cash</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_cash || ''} onChange={e => updateReconForm(e.id, 'deposit_cash', e.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
                         </div>
                       </div>
-                    );
-                  })}
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Credit Card</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_credit_card || ''} onChange={ev => updateReconForm(e.id, 'deposit_credit_card', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Checks</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_checks || ''} onChange={ev => updateReconForm(e.id, 'deposit_checks', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Insurance</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_insurance || ''} onChange={ev => updateReconForm(e.id, 'deposit_insurance', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Care Credit</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_care_credit || ''} onChange={ev => updateReconForm(e.id, 'deposit_care_credit', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">VCC</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_vcc || ''} onChange={ev => updateReconForm(e.id, 'deposit_vcc', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">EFTs</label>
+                        <div className="flex items-center border-2 border-gray-200 rounded-lg bg-white">
+                          <span className="pl-2 text-gray-400">$</span>
+                          <input type="text" value={form.deposit_efts || ''} onChange={ev => updateReconForm(e.id, 'deposit_efts', ev.target.value)} className="w-full p-2 outline-none rounded-lg" inputMode="decimal" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">Status</label>
+                        <select value={form.status || 'Pending'} onChange={ev => updateReconForm(e.id, 'status', ev.target.value)} className="w-full p-2 border-2 border-gray-200 rounded-lg bg-white">
+                          {RECON_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => updateDailyRecon(e.id)} className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg font-medium hover:shadow-lg transition-all">
+                        Submit Review
+                      </button>
+                      <button onClick={() => { setEditingRecon(null); }} className="px-4 py-2.5 bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition-all">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Show existing bank deposit data if any
+                  (e.deposit_cash > 0 || e.deposit_credit_card > 0 || e.deposit_checks > 0 || e.status === 'Accounted') && (
+                    <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                        <Building2 className="w-4 h-4" /> Bank Deposit (Reviewed)
+                      </h4>
+                      <div className="grid grid-cols-4 gap-3 text-sm">
+                        <div><span className="text-gray-500">Cash:</span> <span className="font-medium">${Number(e.deposit_cash || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">Credit Card:</span> <span className="font-medium">${Number(e.deposit_credit_card || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">Checks:</span> <span className="font-medium">${Number(e.deposit_checks || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">Insurance:</span> <span className="font-medium">${Number(e.deposit_insurance || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">Care Credit:</span> <span className="font-medium">${Number(e.deposit_care_credit || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">VCC:</span> <span className="font-medium">${Number(e.deposit_vcc || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500">EFTs:</span> <span className="font-medium">${Number(e.deposit_efts || 0).toFixed(2)}</span></div>
+                        <div><span className="text-gray-500 font-semibold">Total:</span> <span className="font-bold text-blue-600">${Number(e.total_deposit || 0).toFixed(2)}</span></div>
+                      </div>
+                    </div>
+                  )
+                )}
+
+                {/* Documents */}
+                {docs.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {docs.map(doc => (
+                      <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
+                        <File className="w-3 h-3 text-gray-400" />
+                        <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                        <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                          <Eye className="w-3 h-3" />
+                        </button>
+                        <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          
+          // Default handling for other modules
+          return (
+            <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all`}>
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-gray-800">
+                      {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || e.created_at?.split('T')[0]}
+                    </p>
+                    <StatusBadge status={e.status} />
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
+                  </p>
+                  {e.description_of_issue && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.description_of_issue}</p>}
+                  {e.total_collected && <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>}
+                  
+                  {/* Documents for this entry */}
+                  {docs.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {docs.map(doc => (
+                        <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
+                          <File className="w-3 h-3 text-gray-400" />
+                          <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                          <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                            <Eye className="w-3 h-3" />
+                          </button>
+                          <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                            <Download className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                {activeModule === 'it-requests' && (
+                  <div>
+                    {editingStatus === e.id ? (
+                      <div className="space-y-2 w-44">
+                        <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+                          {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" className="w-full p-2 border-2 rounded-lg text-sm" />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { resolution_notes: document.getElementById(`notes-${e.id}`).value })}
+                            className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setEditingStatus(e.id)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline">
+                        <Edit3 className="w-3 h-3" />Update
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          );
+        })}
+      </div>
+    )}
+  </div>
+)}
 
           {/* Entry Form - Staff */}
           {!isAdmin && view === 'entry' && (
@@ -1729,23 +1954,11 @@ if (moduleId === 'daily-recon') {
                       <InputField label="VCC" prefix="$" value={forms['daily-recon'].vcc} onChange={e => updateForm('daily-recon', 'vcc', e.target.value)} />
                       <InputField label="EFTs" prefix="$" value={forms['daily-recon'].efts} onChange={e => updateForm('daily-recon', 'efts', e.target.value)} />
                     </div>
+            <div className="mt-4">
+  <InputField label="Notes" value={forms['daily-recon'].notes} onChange={e => updateForm('daily-recon', 'notes', e.target.value)} />
+</div>
                   </div>
-                  <div className="bg-white rounded-2xl shadow-lg p-6 border-l-4 border-blue-500">
-                    <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2">
-                      <Building2 className="w-5 h-5 text-blue-500" />Bank Deposit
-                    </h2>
-                    <div className="grid grid-cols-2 gap-4">
-                      <InputField label="Cash" prefix="$" value={forms['daily-recon'].deposit_cash} onChange={e => updateForm('daily-recon', 'deposit_cash', e.target.value)} />
-                      <InputField label="Credit Card" prefix="$" value={forms['daily-recon'].deposit_credit_card} onChange={e => updateForm('daily-recon', 'deposit_credit_card', e.target.value)} />
-                      <InputField label="Checks" prefix="$" value={forms['daily-recon'].deposit_checks} onChange={e => updateForm('daily-recon', 'deposit_checks', e.target.value)} />
-                      <InputField label="Insurance" prefix="$" value={forms['daily-recon'].deposit_insurance} onChange={e => updateForm('daily-recon', 'deposit_insurance', e.target.value)} />
-                      <InputField label="Care Credit" prefix="$" value={forms['daily-recon'].deposit_care_credit} onChange={e => updateForm('daily-recon', 'deposit_care_credit', e.target.value)} />
-                      <InputField label="EFTs" prefix="$" value={forms['daily-recon'].deposit_efts} onChange={e => updateForm('daily-recon', 'deposit_efts', e.target.value)} />
-                    </div>
-                    <div className="mt-4">
-                      <InputField label="Notes" value={forms['daily-recon'].notes} onChange={e => updateForm('daily-recon', 'notes', e.target.value)} />
-                    </div>
-                  </div>
+
 <div className="bg-white rounded-2xl shadow-lg p-6">
   <h2 className="font-semibold mb-4 text-gray-800 flex items-center gap-2">
     <File className="w-5 h-5 text-amber-500" />Documents
@@ -1889,74 +2102,84 @@ if (moduleId === 'daily-recon') {
             </div>
           )}
 
-          {/* History View - Staff */}
-          {!isAdmin && view === 'history' && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <h2 className="font-semibold mb-4 text-gray-800">Your Entries <span className="text-sm font-normal text-gray-500">({entries.length})</span></h2>
-              {loading ? (
-                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
-              ) : entries.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No entries yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {entries.slice(0, 30).map(e => {
-                    const canEdit = canEditRecord(e.created_at);
-                    const docKey = `${activeModule}-${e.id}`;
-                    const docs = entryDocuments[docKey] || [];
-                    
-                    // Load documents for this entry if not loaded
-                    if (!entryDocuments[docKey]) {
-                      loadEntryDocuments(activeModule, e.id);
-                    }
-                    
-                    return (
-                      <div key={e.id} className={`p-4 rounded-xl ${currentColors?.bg} border ${currentColors?.border}`}>
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-gray-800">
-                                {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || new Date(e.created_at).toLocaleDateString()}
-                              </p>
-                              <StatusBadge status={e.status} />
-                              {!canEdit && <Lock className="w-4 h-4 text-gray-400" title="Locked (past Friday cutoff)" />}
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">{new Date(e.created_at).toLocaleDateString()}</p>
-                            
-                            {/* Documents for this entry */}
-                            {docs.length > 0 && (
-                              <div className="mt-3 space-y-1">
-                                <p className="text-xs font-medium text-gray-500">Attached Files:</p>
-                                {docs.map(doc => (
-                                  <div key={doc.id} className="flex items-center gap-2 text-sm">
-                                    <File className="w-3 h-3 text-gray-400" />
-                                    <span className="text-gray-600 truncate">{doc.file_name}</span>
-                                    <button
-                                      onClick={() => viewDocument(doc)}
-                                      className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
-                                      title="Preview"
-                                    >
-                                      <Eye className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            {e.total_collected && <p className="font-bold text-emerald-600">${Number(e.total_collected).toFixed(2)}</p>}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </main>
-      </div>
+ {/* History View - Staff */}
+{!isAdmin && view === 'history' && (
+  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+    <h2 className="font-semibold mb-4 text-gray-800">Your Entries <span className="text-sm font-normal text-gray-500">({entries.length})</span></h2>
+    {loading ? (
+      <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+    ) : entries.length === 0 ? (
+      <p className="text-gray-500 text-center py-8">No entries yet</p>
+    ) : (
+      <div className="space-y-3">
+        {entries.slice(0, 30).map(e => {
+          const canEdit = canEditRecord(e.created_at);
+          const docKey = `${activeModule}-${e.id}`;
+          const docs = entryDocuments[docKey] || [];
+          
+          // Load documents for this entry if not loaded
+          if (!entryDocuments[docKey]) {
+            loadEntryDocuments(activeModule, e.id);
+          }
 
-      {sidebarOpen && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-    </div>
-  );
-}
+          // Determine background color based on status for daily-recon
+          let bgClass = `${currentColors?.bg} border ${currentColors?.border}`;
+          if (activeModule === 'daily-recon') {
+            if (e.status === 'Accounted') {
+              bgClass = 'bg-emerald-50 border-2 border-emerald-300';
+            } else if (e.status === 'Rejected') {
+              bgClass = 'bg-red-50 border-2 border-red-300';
+            } else {
+              bgClass = 'bg-amber-50 border-2 border-amber-300';
+            }
+          }
+          
+          return (
+            <div key={e.id} className={`p-4 rounded-xl ${bgClass}`}>
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-800">
+                      {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || new Date(e.created_at).toLocaleDateString()}
+                    </p>
+                    <StatusBadge status={e.status || (activeModule === 'daily-recon' ? 'Pending' : e.status)} />
+                    {!canEdit && <Lock className="w-4 h-4 text-gray-400" title="Locked (past Friday cutoff)" />}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{new Date(e.created_at).toLocaleDateString()}</p>
+                  
+                  {/* Show total for daily recon */}
+                  {activeModule === 'daily-recon' && e.total_collected && (
+                    <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>
+                  )}
+                  
+                  {/* Documents for this entry */}
+                  {docs.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      <p className="text-xs font-medium text-gray-500">Attached Files:</p>
+                      {docs.map(doc => (
+                        <div key={doc.id} className="flex items-center gap-2 text-sm">
+                          <File className="w-3 h-3 text-gray-400" />
+                          <span className="text-gray-600 truncate">{doc.file_name}</span>
+                          <button
+                            onClick={() => viewDocument(doc)}
+                            className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
+                            title="Preview"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right">
+                  {e.total_collected && activeModule !== 'daily-recon' && <p className="font-bold text-emerald-600">${Number(e.total_collected).toFixed(2)}</p>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+)}
