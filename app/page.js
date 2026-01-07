@@ -2182,6 +2182,7 @@ const updateReconForm = (entryId, field, value) => {
       </div>
     )}
   </div>
+)}
 
         </main>
       </div>
