@@ -343,10 +343,12 @@ const [sortOrder, setSortOrder] = useState('desc');
 const [recordsPerPage, setRecordsPerPage] = useState(20);
 const [currentPage, setCurrentPage] = useState(1);
 const [nameForm, setNameForm] = useState('');
+  const [editingStaffEntry, setEditingStaffEntry] = useState(null);
+const [staffEditForm, setStaffEditForm] = useState({});
 
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'staff', locations: [] });
+  const [newUser, setNewUser] = useState({ name: '', username: '', email: '', password: '', role: 'staff', locations: [] });
 
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' });
 
@@ -842,16 +844,29 @@ const handleLogin = async () => {
   setModuleData({});
 };
 
-  const addUser = async () => {
-    if (!newUser.name || !newUser.email || !newUser.password) {
+const addUser = async () => {
+    if (!newUser.name || !newUser.username || !newUser.email || !newUser.password) {
       showMessage('error', 'Please fill all required fields');
       return;
     }
 
-    const { data: createdUser, error } = await supabase
+    // Check if username already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', newUser.username.toLowerCase())
+      .maybeSingle();
+    
+    if (existingUser) {
+      showMessage('error', 'Username already exists');
+      return;
+    }
+
+const { data: createdUser, error } = await supabase
       .from('users')
       .insert({
         name: newUser.name,
+        username: newUser.username.toLowerCase(),
         email: newUser.email.toLowerCase(),
         password_hash: newUser.password,
         role: newUser.role,
@@ -875,7 +890,7 @@ const handleLogin = async () => {
     }
 
     showMessage('success', '✓ User created successfully!');
-    setNewUser({ name: '', email: '', password: '', role: 'staff', locations: [] });
+    setNewUser({ name: '', username: '', email: '', password: '', role: 'staff', locations: [] });
     setShowAddUser(false);
     loadUsers();
   };
@@ -1439,6 +1454,172 @@ const getTotalPages = () => {
   if (recordsPerPage === 'all') return 1;
   return Math.ceil(allEntries.length / recordsPerPage);
 };
+
+  const startEditingStaffEntry = (entry) => {
+  setEditingStaffEntry(entry.id);
+  if (activeModule === 'daily-recon') {
+    setStaffEditForm({
+      recon_date: entry.recon_date || '',
+      cash: entry.cash || '',
+      credit_card: entry.credit_card || '',
+      checks_otc: entry.checks_otc || '',
+      insurance_checks: entry.insurance_checks || '',
+      care_credit: entry.care_credit || '',
+      vcc: entry.vcc || '',
+      efts: entry.efts || '',
+      notes: entry.notes || ''
+    });
+  } else if (activeModule === 'billing-inquiry') {
+    setStaffEditForm({
+      patient_name: entry.patient_name || '',
+      chart_number: entry.chart_number || '',
+      parent_name: entry.parent_name || '',
+      date_of_request: entry.date_of_request || '',
+      inquiry_type: entry.inquiry_type || '',
+      description: entry.description || '',
+      amount_in_question: entry.amount_in_question || '',
+      best_contact_method: entry.best_contact_method || '',
+      best_contact_time: entry.best_contact_time || ''
+    });
+  } else if (activeModule === 'bills-payment') {
+    setStaffEditForm({
+      bill_status: entry.bill_status || 'Pending',
+      bill_date: entry.bill_date || '',
+      vendor: entry.vendor || '',
+      description: entry.description || '',
+      amount: entry.amount || '',
+      due_date: entry.due_date || '',
+      manager_initials: entry.manager_initials || ''
+    });
+  } else if (activeModule === 'order-requests') {
+    setStaffEditForm({
+      date_entered: entry.date_entered || '',
+      vendor: entry.vendor || '',
+      invoice_number: entry.invoice_number || '',
+      invoice_date: entry.invoice_date || '',
+      due_date: entry.due_date || '',
+      amount: entry.amount || '',
+      notes: entry.notes || ''
+    });
+  } else if (activeModule === 'refund-requests') {
+    setStaffEditForm({
+      patient_name: entry.patient_name || '',
+      chart_number: entry.chart_number || '',
+      parent_name: entry.parent_name || '',
+      rp_address: entry.rp_address || '',
+      date_of_request: entry.date_of_request || '',
+      type: entry.type || '',
+      description: entry.description || '',
+      amount_requested: entry.amount_requested || '',
+      best_contact_method: entry.best_contact_method || ''
+    });
+  } else if (activeModule === 'it-requests') {
+    setStaffEditForm({
+      date_reported: entry.date_reported || '',
+      urgency: entry.urgency || '',
+      requester_name: entry.requester_name || '',
+      device_system: entry.device_system || '',
+      description_of_issue: entry.description_of_issue || '',
+      best_contact_method: entry.best_contact_method || '',
+      best_contact_time: entry.best_contact_time || ''
+    });
+  }
+};
+
+const updateStaffEditForm = (field, value) => {
+  setStaffEditForm(prev => ({ ...prev, [field]: value }));
+};
+
+const saveStaffEntryUpdate = async () => {
+  if (!editingStaffEntry) return;
+  setSaving(true);
+  
+  const module = ALL_MODULES.find(m => m.id === activeModule);
+  let updateData = { updated_by: currentUser.id };
+  
+  if (activeModule === 'daily-recon') {
+    updateData = { ...updateData,
+      recon_date: staffEditForm.recon_date,
+      cash: parseFloat(staffEditForm.cash) || 0,
+      credit_card: parseFloat(staffEditForm.credit_card) || 0,
+      checks_otc: parseFloat(staffEditForm.checks_otc) || 0,
+      insurance_checks: parseFloat(staffEditForm.insurance_checks) || 0,
+      care_credit: parseFloat(staffEditForm.care_credit) || 0,
+      vcc: parseFloat(staffEditForm.vcc) || 0,
+      efts: parseFloat(staffEditForm.efts) || 0,
+      notes: staffEditForm.notes
+    };
+  } else if (activeModule === 'billing-inquiry') {
+    updateData = { ...updateData,
+      patient_name: staffEditForm.patient_name,
+      chart_number: staffEditForm.chart_number,
+      parent_name: staffEditForm.parent_name,
+      date_of_request: staffEditForm.date_of_request || null,
+      inquiry_type: staffEditForm.inquiry_type,
+      description: staffEditForm.description,
+      amount_in_question: parseFloat(staffEditForm.amount_in_question) || null,
+      best_contact_method: staffEditForm.best_contact_method || null,
+      best_contact_time: staffEditForm.best_contact_time
+    };
+  } else if (activeModule === 'bills-payment') {
+    updateData = { ...updateData,
+      bill_status: staffEditForm.bill_status || 'Pending',
+      bill_date: staffEditForm.bill_date,
+      vendor: staffEditForm.vendor,
+      description: staffEditForm.description,
+      amount: parseFloat(staffEditForm.amount) || 0,
+      due_date: staffEditForm.due_date || null,
+      manager_initials: staffEditForm.manager_initials
+    };
+  } else if (activeModule === 'order-requests') {
+    updateData = { ...updateData,
+      date_entered: staffEditForm.date_entered,
+      vendor: staffEditForm.vendor,
+      invoice_number: staffEditForm.invoice_number,
+      invoice_date: staffEditForm.invoice_date || null,
+      due_date: staffEditForm.due_date || null,
+      amount: parseFloat(staffEditForm.amount) || 0,
+      notes: staffEditForm.notes
+    };
+  } else if (activeModule === 'refund-requests') {
+    updateData = { ...updateData,
+      patient_name: staffEditForm.patient_name,
+      chart_number: staffEditForm.chart_number,
+      parent_name: staffEditForm.parent_name,
+      rp_address: staffEditForm.rp_address,
+      date_of_request: staffEditForm.date_of_request,
+      type: staffEditForm.type || null,
+      description: staffEditForm.description,
+      amount_requested: parseFloat(staffEditForm.amount_requested) || 0,
+      best_contact_method: staffEditForm.best_contact_method || null
+    };
+  } else if (activeModule === 'it-requests') {
+    updateData = { ...updateData,
+      date_reported: staffEditForm.date_reported,
+      urgency: staffEditForm.urgency || null,
+      requester_name: staffEditForm.requester_name,
+      device_system: staffEditForm.device_system,
+      description_of_issue: staffEditForm.description_of_issue,
+      best_contact_method: staffEditForm.best_contact_method || null,
+      best_contact_time: staffEditForm.best_contact_time
+    };
+  }
+
+  const { error } = await supabase.from(module.table).update(updateData).eq('id', editingStaffEntry);
+
+  if (error) {
+    showMessage('error', 'Failed to update: ' + error.message);
+    setSaving(false);
+    return;
+  }
+
+  showMessage('success', '✓ Entry updated!');
+  setEditingStaffEntry(null);
+  setStaffEditForm({});
+  loadModuleData(activeModule);
+  setSaving(false);
+};
+  
   const currentColors = MODULE_COLORS[activeModule];
   const currentModule = ALL_MODULES.find(m => m.id === activeModule);
 
@@ -1733,8 +1914,9 @@ if (!currentUser) {
               {(showAddUser || editingUser) && (
                 <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                   <h3 className="font-semibold mb-4 text-gray-800">{editingUser ? 'Edit User' : 'Add New User'}</h3>
-                  <div className="grid grid-cols-2 gap-4">
+<div className="grid grid-cols-2 gap-4">
                     <InputField label="Name *" value={editingUser ? editingUser.name : newUser.name} onChange={e => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})} />
+                    <InputField label="Username *" value={editingUser ? (editingUser.username || '') : newUser.username} onChange={e => editingUser ? setEditingUser({...editingUser, username: e.target.value}) : setNewUser({...newUser, username: e.target.value})} placeholder="Login username" />
                     <InputField label="Email *" value={editingUser ? editingUser.email : newUser.email} onChange={e => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})} />
                     <PasswordField label={editingUser ? "New Password" : "Password *"} value={editingUser ? (editingUser.newPassword || '') : newUser.password} onChange={e => editingUser ? setEditingUser({...editingUser, newPassword: e.target.value}) : setNewUser({...newUser, password: e.target.value})} placeholder={editingUser ? "Leave blank to keep current" : ""} />
                     <InputField label="Role" value={editingUser ? editingUser.role : newUser.role} onChange={e => editingUser ? setEditingUser({...editingUser, role: e.target.value}) : setNewUser({...newUser, role: e.target.value})} options={isSuperAdmin ? ['staff', 'finance_admin', 'super_admin'] : ['staff', 'finance_admin']} />
@@ -2597,7 +2779,7 @@ if (!currentUser) {
             </div>
           )}
 
- {/* History View - Staff */}
+{/* History View - Staff */}
 {!isAdmin && view === 'history' && (
   <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
     <h2 className="font-semibold mb-4 text-gray-800">Your Entries <span className="text-sm font-normal text-gray-500">({entries.length})</span></h2>
@@ -2609,68 +2791,176 @@ if (!currentUser) {
       <div className="space-y-3">
         {entries.slice(0, 30).map(e => {
           const canEdit = canEditRecord(e.created_at);
+          const isEditing = editingStaffEntry === e.id;
           const docKey = `${activeModule}-${e.id}`;
           const docs = entryDocuments[docKey] || [];
           
-          // Load documents for this entry if not loaded
           if (!entryDocuments[docKey]) {
             loadEntryDocuments(activeModule, e.id);
           }
 
-          // Determine background color based on status for daily-recon
           let bgClass = `${currentColors?.bg} border ${currentColors?.border}`;
           if (activeModule === 'daily-recon') {
-            if (e.status === 'Accounted') {
-              bgClass = 'bg-emerald-50 border-2 border-emerald-300';
-            } else if (e.status === 'Rejected') {
-              bgClass = 'bg-red-50 border-2 border-red-300';
-            } else {
-              bgClass = 'bg-amber-50 border-2 border-amber-300';
-            }
+            if (e.status === 'Accounted') bgClass = 'bg-emerald-50 border-2 border-emerald-300';
+            else if (e.status === 'Rejected') bgClass = 'bg-red-50 border-2 border-red-300';
+            else bgClass = 'bg-amber-50 border-2 border-amber-300';
           }
           
           return (
             <div key={e.id} className={`p-4 rounded-xl ${bgClass}`}>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-gray-800">
-                      {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || new Date(e.created_at).toLocaleDateString()}
-                    </p>
-                    <StatusBadge status={e.status || (activeModule === 'daily-recon' ? 'Pending' : e.status)} />
-                    {!canEdit && <Lock className="w-4 h-4 text-gray-400" title="Locked (past Friday cutoff)" />}
+              {isEditing ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <Edit3 className="w-4 h-4" /> Edit Entry
+                    </h4>
+                    <button onClick={() => { setEditingStaffEntry(null); setStaffEditForm({}); }} className="text-gray-400 hover:text-gray-600">
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">{new Date(e.created_at).toLocaleDateString()}</p>
                   
-                  {/* Show total for daily recon */}
-                  {activeModule === 'daily-recon' && e.total_collected && (
-                    <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>
-                  )}
-                  
-                  {/* Documents for this entry */}
-                  {docs.length > 0 && (
-                    <div className="mt-3 space-y-1">
-                      <p className="text-xs font-medium text-gray-500">Attached Files:</p>
-                      {docs.map(doc => (
-                        <div key={doc.id} className="flex items-center gap-2 text-sm">
-                          <File className="w-3 h-3 text-gray-400" />
-                          <span className="text-gray-600 truncate">{doc.file_name}</span>
-                          <button
-                            onClick={() => viewDocument(doc)}
-                            className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
-                            title="Preview"
-                          >
-                            <Eye className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
+                  {activeModule === 'daily-recon' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Date" type="date" value={staffEditForm.recon_date} onChange={ev => updateStaffEditForm('recon_date', ev.target.value)} />
+                      <InputField label="Cash" prefix="$" value={staffEditForm.cash} onChange={ev => updateStaffEditForm('cash', ev.target.value)} />
+                      <InputField label="Credit Card" prefix="$" value={staffEditForm.credit_card} onChange={ev => updateStaffEditForm('credit_card', ev.target.value)} />
+                      <InputField label="Checks OTC" prefix="$" value={staffEditForm.checks_otc} onChange={ev => updateStaffEditForm('checks_otc', ev.target.value)} />
+                      <InputField label="Insurance Checks" prefix="$" value={staffEditForm.insurance_checks} onChange={ev => updateStaffEditForm('insurance_checks', ev.target.value)} />
+                      <InputField label="Care Credit" prefix="$" value={staffEditForm.care_credit} onChange={ev => updateStaffEditForm('care_credit', ev.target.value)} />
+                      <InputField label="VCC" prefix="$" value={staffEditForm.vcc} onChange={ev => updateStaffEditForm('vcc', ev.target.value)} />
+                      <InputField label="EFTs" prefix="$" value={staffEditForm.efts} onChange={ev => updateStaffEditForm('efts', ev.target.value)} />
+                      <div className="col-span-2">
+                        <InputField label="Notes" value={staffEditForm.notes} onChange={ev => updateStaffEditForm('notes', ev.target.value)} />
+                      </div>
                     </div>
                   )}
+                  
+                  {activeModule === 'billing-inquiry' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Patient Name" value={staffEditForm.patient_name} onChange={ev => updateStaffEditForm('patient_name', ev.target.value)} />
+                      <InputField label="Chart Number" value={staffEditForm.chart_number} onChange={ev => updateStaffEditForm('chart_number', ev.target.value)} />
+                      <InputField label="Parent Name" value={staffEditForm.parent_name} onChange={ev => updateStaffEditForm('parent_name', ev.target.value)} />
+                      <InputField label="Date of Request" type="date" value={staffEditForm.date_of_request} onChange={ev => updateStaffEditForm('date_of_request', ev.target.value)} />
+                      <InputField label="Type of Inquiry" value={staffEditForm.inquiry_type} onChange={ev => updateStaffEditForm('inquiry_type', ev.target.value)} options={INQUIRY_TYPES} />
+                      <InputField label="Amount in Question" prefix="$" value={staffEditForm.amount_in_question} onChange={ev => updateStaffEditForm('amount_in_question', ev.target.value)} />
+                      <InputField label="Contact Method" value={staffEditForm.best_contact_method} onChange={ev => updateStaffEditForm('best_contact_method', ev.target.value)} options={CONTACT_METHODS} />
+                      <InputField label="Best Time to Contact" value={staffEditForm.best_contact_time} onChange={ev => updateStaffEditForm('best_contact_time', ev.target.value)} />
+                      <div className="col-span-2">
+                        <InputField label="Description" large value={staffEditForm.description} onChange={ev => updateStaffEditForm('description', ev.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeModule === 'bills-payment' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Bill Status" value={staffEditForm.bill_status} onChange={ev => updateStaffEditForm('bill_status', ev.target.value)} options={['Pending', 'Approved', 'Paid']} />
+                      <InputField label="Date" type="date" value={staffEditForm.bill_date} onChange={ev => updateStaffEditForm('bill_date', ev.target.value)} />
+                      <InputField label="Vendor" value={staffEditForm.vendor} onChange={ev => updateStaffEditForm('vendor', ev.target.value)} />
+                      <InputField label="Amount" prefix="$" value={staffEditForm.amount} onChange={ev => updateStaffEditForm('amount', ev.target.value)} />
+                      <InputField label="Due Date" type="date" value={staffEditForm.due_date} onChange={ev => updateStaffEditForm('due_date', ev.target.value)} />
+                      <InputField label="Manager Initials" value={staffEditForm.manager_initials} onChange={ev => updateStaffEditForm('manager_initials', ev.target.value)} />
+                      <div className="col-span-2">
+                        <InputField label="Description" large value={staffEditForm.description} onChange={ev => updateStaffEditForm('description', ev.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeModule === 'order-requests' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Date Entered" type="date" value={staffEditForm.date_entered} onChange={ev => updateStaffEditForm('date_entered', ev.target.value)} />
+                      <InputField label="Vendor" value={staffEditForm.vendor} onChange={ev => updateStaffEditForm('vendor', ev.target.value)} />
+                      <InputField label="Invoice Number" value={staffEditForm.invoice_number} onChange={ev => updateStaffEditForm('invoice_number', ev.target.value)} />
+                      <InputField label="Invoice Date" type="date" value={staffEditForm.invoice_date} onChange={ev => updateStaffEditForm('invoice_date', ev.target.value)} />
+                      <InputField label="Due Date" type="date" value={staffEditForm.due_date} onChange={ev => updateStaffEditForm('due_date', ev.target.value)} />
+                      <InputField label="Amount" prefix="$" value={staffEditForm.amount} onChange={ev => updateStaffEditForm('amount', ev.target.value)} />
+                      <div className="col-span-2">
+                        <InputField label="Notes" large value={staffEditForm.notes} onChange={ev => updateStaffEditForm('notes', ev.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeModule === 'refund-requests' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Patient Name" value={staffEditForm.patient_name} onChange={ev => updateStaffEditForm('patient_name', ev.target.value)} />
+                      <InputField label="Chart Number" value={staffEditForm.chart_number} onChange={ev => updateStaffEditForm('chart_number', ev.target.value)} />
+                      <InputField label="Parent Name" value={staffEditForm.parent_name} onChange={ev => updateStaffEditForm('parent_name', ev.target.value)} />
+                      <InputField label="RP Address" value={staffEditForm.rp_address} onChange={ev => updateStaffEditForm('rp_address', ev.target.value)} />
+                      <InputField label="Date of Request" type="date" value={staffEditForm.date_of_request} onChange={ev => updateStaffEditForm('date_of_request', ev.target.value)} />
+                      <InputField label="Type" value={staffEditForm.type} onChange={ev => updateStaffEditForm('type', ev.target.value)} options={REFUND_TYPES} />
+                      <InputField label="Amount Requested" prefix="$" value={staffEditForm.amount_requested} onChange={ev => updateStaffEditForm('amount_requested', ev.target.value)} />
+                      <InputField label="Contact Method" value={staffEditForm.best_contact_method} onChange={ev => updateStaffEditForm('best_contact_method', ev.target.value)} options={CONTACT_METHODS} />
+                      <div className="col-span-2">
+                        <InputField label="Description" large value={staffEditForm.description} onChange={ev => updateStaffEditForm('description', ev.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeModule === 'it-requests' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Date Reported" type="date" value={staffEditForm.date_reported} onChange={ev => updateStaffEditForm('date_reported', ev.target.value)} />
+                      <InputField label="Urgency" value={staffEditForm.urgency} onChange={ev => updateStaffEditForm('urgency', ev.target.value)} options={['Low', 'Medium', 'High', 'Critical']} />
+                      <InputField label="Requester Name" value={staffEditForm.requester_name} onChange={ev => updateStaffEditForm('requester_name', ev.target.value)} />
+                      <InputField label="Device/System" value={staffEditForm.device_system} onChange={ev => updateStaffEditForm('device_system', ev.target.value)} />
+                      <InputField label="Contact Method" value={staffEditForm.best_contact_method} onChange={ev => updateStaffEditForm('best_contact_method', ev.target.value)} options={['Phone', 'Email', 'Text']} />
+                      <InputField label="Best Contact Time" value={staffEditForm.best_contact_time} onChange={ev => updateStaffEditForm('best_contact_time', ev.target.value)} />
+                      <div className="col-span-2">
+                        <InputField label="Description of Issue" large value={staffEditForm.description_of_issue} onChange={ev => updateStaffEditForm('description_of_issue', ev.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={saveStaffEntryUpdate} disabled={saving} className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50">
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Save Changes'}
+                    </button>
+                    <button onClick={() => { setEditingStaffEntry(null); setStaffEditForm({}); }} className="px-4 py-2.5 bg-gray-200 rounded-xl font-medium hover:bg-gray-300 transition-all">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                <div className="text-right">
-                  {e.total_collected && activeModule !== 'daily-recon' && <p className="font-bold text-emerald-600">${Number(e.total_collected).toFixed(2)}</p>}
+              ) : (
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-800">
+                        {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || new Date(e.created_at).toLocaleDateString()}
+                      </p>
+                      <StatusBadge status={e.status || (activeModule === 'daily-recon' ? 'Pending' : e.status)} />
+                      {!canEdit && <Lock className="w-4 h-4 text-gray-400" title="Locked (past Friday cutoff)" />}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(e.created_at).toLocaleDateString()}</p>
+                    
+                    {activeModule === 'daily-recon' && e.total_collected && (
+                      <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.total_collected).toFixed(2)}</p>
+                    )}
+                    
+                    {activeModule !== 'daily-recon' && (e.amount || e.amount_requested || e.amount_in_question) && (
+                      <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.amount || e.amount_requested || e.amount_in_question).toFixed(2)}</p>
+                    )}
+                    
+                    {docs.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        <p className="text-xs font-medium text-gray-500">Attached Files:</p>
+                        {docs.map(doc => (
+                          <div key={doc.id} className="flex items-center gap-2 text-sm">
+                            <File className="w-3 h-3 text-gray-400" />
+                            <span className="text-gray-600 truncate">{doc.file_name}</span>
+                            <button onClick={() => viewDocument(doc)} className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors" title="Preview">
+                              <Eye className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {canEdit && (
+                    <button onClick={() => startEditingStaffEntry(e)} className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1">
+                      <Edit3 className="w-4 h-4" /> Edit
+                    </button>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
