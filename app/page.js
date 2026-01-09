@@ -1,4 +1,6 @@
-//**Clinic Tracking System**// - M
+//Clinic Management System v0.34
+// Devoloper: Mark Murillo 
+// Company: Kidshine Hawaii
 
 'use client';
 import { useState, useEffect, useRef } from 'react';
