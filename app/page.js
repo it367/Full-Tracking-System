@@ -29,7 +29,7 @@ const MODULE_COLORS = {
   'it-requests': { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700', accent: 'bg-cyan-500', light: 'bg-cyan-100' },
 };
 
-const IT_STATUSES = ['Open', 'In Progress', 'Resolved', 'Closed'];
+const IT_STATUSES = ['For Review', 'In Progress', 'On-hold', 'Resolved'];
 const INQUIRY_TYPES = ['Refund', 'Balance', 'Insurance', 'Payment Plan', 'Other'];
 const REFUND_TYPES = ['Refund', 'Credit', 'Adjustment'];
 const CONTACT_METHODS = ['Phone', 'Email', 'Text'];
@@ -363,8 +363,10 @@ function EntryPreview({ entry, module, onClose, colors, onViewDocument }) {
 
 function StatusBadge({ status }) {
   const colors = {
+    'For Review': 'bg-purple-100 text-purple-700 border-purple-200',
     'Open': 'bg-red-100 text-red-700 border-red-200',
     'In Progress': 'bg-amber-100 text-amber-700 border-amber-200',
+    'On-hold': 'bg-gray-100 text-gray-600 border-gray-200',
     'Resolved': 'bg-emerald-100 text-emerald-700 border-emerald-200',
     'Closed': 'bg-gray-100 text-gray-600 border-gray-200',
     'Pending': 'bg-amber-100 text-amber-700 border-amber-200',
@@ -522,6 +524,7 @@ const [loadingUserSessions, setLoadingUserSessions] = useState(false);
 const [staffSortOrder, setStaffSortOrder] = useState('desc');
 const [staffRecordsPerPage, setStaffRecordsPerPage] = useState(20);
 const [staffCurrentPage, setStaffCurrentPage] = useState(1);
+  const [itUsers, setItUsers] = useState([]);
 const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmText: 'Confirm', confirmColor: 'blue' });
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -604,8 +607,9 @@ useEffect(() => {
         }
         setLastLogin(sessionData.lastLogin);
 // Load users if admin and set default view
-        if (sessionData.user.role === 'super_admin' || sessionData.user.role === 'finance_admin') {
+if (sessionData.user.role === 'super_admin' || sessionData.user.role === 'finance_admin') {
           loadUsers();
+          loadItUsers();
           setAdminView('analytics'); // Default to analytics for admins
         }
       }
@@ -714,6 +718,16 @@ const showConfirm = (title, message, confirmText = 'Confirm', confirmColor = 'bl
     if (data) setLocations(data);
   };
 
+  const loadItUsers = async () => {
+  const { data } = await supabase
+    .from('users')
+    .select('id, name')
+    .eq('role', 'super_admin')
+    .eq('is_active', true)
+    .order('name');
+  if (data) setItUsers(data);
+};
+  
   const loadUsers = async () => {
     console.log('Loading users...');
     
@@ -1034,8 +1048,9 @@ setCurrentUser(user);
       setSelectedLocation(selectedLoc);
     }
 
-    if (user.role === 'super_admin' || user.role === 'finance_admin') {
+if (user.role === 'super_admin' || user.role === 'finance_admin') {
       loadUsers();
+      loadItUsers();
       loadLoginHistory(user.id);
       setAdminView('analytics'); // Default to analytics for admins
     }
@@ -1420,7 +1435,7 @@ if (moduleId === 'daily-recon') {
         eassist_audited: form.eassist_audited === 'Yes' ? true : form.eassist_audited === 'No' ? false : null,
         status: form.status || 'Pending'
       };
-    } else if (moduleId === 'it-requests') {
+} else if (moduleId === 'it-requests') {
       entryData = {
         ...entryData,
         date_reported: form.date_reported,
@@ -1430,7 +1445,7 @@ if (moduleId === 'daily-recon') {
         description_of_issue: form.description_of_issue,
         best_contact_method: form.best_contact_method || null,
         best_contact_time: form.best_contact_time,
-        status: 'Open'
+        status: 'For Review'
       };
     }
 
@@ -3693,7 +3708,10 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                 </div>
               );
             }
-            
+
+// Skip - IT Requests handled above
+if (activeModule === 'it-requests') return null;
+
             // Default handling for other modules
             return (
               <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all`}>
@@ -3741,42 +3759,94 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                     </button>
                   )}
 
-                  {activeModule === 'it-requests' && (
-                    <div>
-                      {editingStatus === e.id ? (
-                        <div className="space-y-2 w-44">
-                          <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                            {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                          <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" className="w-full p-2 border-2 rounded-lg text-sm" />
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { resolution_notes: document.getElementById(`notes-${e.id}`).value })}
-                              className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
-                            >
-                              Save
-                            </button>
-                            <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
-                          </div>
-                        </div>
-) : (
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setViewingEntry(e)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline">
-                            <Eye className="w-3 h-3" />Preview
-                          </button>
-                          <button onClick={() => setEditingStatus(e.id)} className="text-xs text-purple-600 flex items-center gap-1 font-medium hover:underline">
-                            <Edit3 className="w-3 h-3" />Update
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+  {activeModule === 'it-requests' && (
+  <div 
+    className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all cursor-pointer`}
+    onClick={() => setViewingEntry(e)}
+  >
+    <div className="flex justify-between items-start gap-4">
+      <div className="flex-1">
+        {/* Header Row */}
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <span className="font-bold text-cyan-600">IT-{e.ticket_number}</span>
+          <StatusBadge status={e.status} />
+          <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
+            e.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
+            e.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 
+            e.urgency === 'Medium' ? 'bg-amber-100 text-amber-700' : 
+            'bg-gray-100 text-gray-600'
+          }`}>{e.urgency || 'Low'}</span>
         </div>
-      )}
+        
+        {/* Main Info */}
+        <p className="font-medium text-gray-800">{e.requester_name}</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {e.locations?.name} • {new Date(e.created_at).toLocaleDateString()}
+        </p>
+        
+        {/* Assigned To */}
+        {e.assigned_to && (
+          <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+            <User className="w-3 h-3" /> Assigned: {e.assigned_to}
+          </p>
+        )}
+        
+        {/* Documents */}
+        {docs.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {docs.map(doc => (
+              <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs" onClick={ev => ev.stopPropagation()}>
+                <File className="w-3 h-3 text-gray-400" />
+                <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                  <Eye className="w-3 h-3" />
+                </button>
+                <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                  <Download className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-2" onClick={ev => ev.stopPropagation()}>
+        {editingStatus === e.id ? (
+          <div className="space-y-2 w-48">
+            <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+              {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select defaultValue={e.assigned_to || ''} id={`assigned-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+              <option value="">Unassigned</option>
+              {itUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+            </select>
+            <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" defaultValue={e.resolution_notes || ''} className="w-full p-2 border-2 rounded-lg text-sm" />
+            <div className="flex gap-1">
+              <button
+                onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { 
+                  resolution_notes: document.getElementById(`notes-${e.id}`).value,
+                  assigned_to: document.getElementById(`assigned-${e.id}`).value || null
+                })}
+                className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
+              >
+                Save
+              </button>
+              <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setEditingStatus(e.id)} 
+            className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
+          >
+            <Edit3 className="w-4 h-4" /> Update
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+)}
       
       {/* Pagination Controls */}
       {!loading && getModuleEntries().length > 0 && recordsPerPage !== 'all' && getTotalPages() > 1 && (
