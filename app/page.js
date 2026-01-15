@@ -2046,7 +2046,7 @@ if (!currentUser) {
         </div>
 
         {isAdmin && (
-            <div className="p-4 border-b bg-purple-50 flex-shrink-0">>
+            <div className="p-4 border-b bg-purple-50 flex-shrink-0">
             <label className="text-xs font-medium text-purple-700 mb-1.5 block">Filter by Location</label>
             <select value={adminLocation} onChange={e => setAdminLocation(e.target.value)} className="w-full p-2.5 border-2 border-purple-200 rounded-xl text-sm focus:border-purple-400 outline-none bg-white">
               <option value="all">📍 All Locations</option>
