@@ -195,12 +195,44 @@ function FileViewer({ file, onClose }) {
   );
 }
 
-function EntryPreview({ entry, module, onClose, colors, onViewDocument }) {
+function EntryPreview({ entry, module, onClose, colors, onViewDocument, currentUser, itUsers, onUpdateStatus }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    status: entry?.status || 'For Review',
+    assigned_to: entry?.assigned_to || '',
+    resolution_notes: entry?.resolution_notes || ''
+  });
+
+  useEffect(() => {
+    if (entry) {
+      setEditForm({
+        status: entry.status || 'For Review',
+        assigned_to: entry.assigned_to || '',
+        resolution_notes: entry.resolution_notes || ''
+      });
+      setIsEditing(false);
+    }
+  }, [entry]);
+
   if (!entry) return null;
   
   const formatDate = (date) => date ? new Date(date).toLocaleDateString() : '-';
   const formatCurrency = (val) => val ? `$${Number(val).toFixed(2)}` : '$0.00';
   const formatDateTime = (date) => date ? new Date(date).toLocaleString() : '-';
+
+  const isITRequest = module?.id === 'it-requests';
+  const canEdit = isITRequest && currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'finance_admin' || currentUser.role === 'it');
+
+  const handleSave = () => {
+    if (onUpdateStatus) {
+      onUpdateStatus(entry.id, editForm.status, {
+        assigned_to: editForm.assigned_to || null,
+        resolution_notes: editForm.resolution_notes || null
+      });
+    }
+    setIsEditing(false);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -331,18 +363,87 @@ function EntryPreview({ entry, module, onClose, colors, onViewDocument }) {
 
           {/* IT Requests */}
           {module?.id === 'it-requests' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div><span className="text-gray-600 text-sm block">Ticket Number</span><span className="font-medium text-cyan-600">IT-{entry.ticket_number}</span></div>
-              <div><span className="text-gray-600 text-sm block">Date Reported</span><span className="font-medium">{formatDate(entry.date_reported)}</span></div>
-              <div><span className="text-gray-600 text-sm block">Urgency</span><span className={`font-medium ${entry.urgency === 'Critical' ? 'text-red-600' : entry.urgency === 'High' ? 'text-orange-600' : ''}`}>{entry.urgency || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Requester Name</span><span className="font-medium">{entry.requester_name || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Device / System</span><span className="font-medium">{entry.device_system || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Contact Method</span><span className="font-medium">{entry.best_contact_method || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Best Contact Time</span><span className="font-medium">{entry.best_contact_time || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Assigned To</span><span className="font-medium">{entry.assigned_to || '-'}</span></div>
-              <div className="col-span-2"><span className="text-gray-600 text-sm block">Description of Issue</span><p className="font-medium bg-gray-50 p-3 rounded-lg mt-1">{entry.description_of_issue || '-'}</p></div>
-              {entry.resolution_notes && <div className="col-span-2"><span className="text-gray-600 text-sm block">Resolution Notes</span><p className="font-medium bg-emerald-50 p-3 rounded-lg mt-1 text-emerald-800">{entry.resolution_notes}</p></div>}
-              {entry.resolved_at && <div><span className="text-gray-600 text-sm block">Resolved At</span><span className="font-medium">{formatDateTime(entry.resolved_at)}</span></div>}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><span className="text-gray-600 text-sm block">Ticket Number</span><span className="font-medium text-cyan-600">IT-{entry.ticket_number}</span></div>
+                <div><span className="text-gray-600 text-sm block">Date Reported</span><span className="font-medium">{formatDate(entry.date_reported)}</span></div>
+                <div><span className="text-gray-600 text-sm block">Urgency</span><span className={`font-medium ${entry.urgency === 'Critical' ? 'text-red-600' : entry.urgency === 'High' ? 'text-orange-600' : ''}`}>{entry.urgency || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Requester Name</span><span className="font-medium">{entry.requester_name || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Device / System</span><span className="font-medium">{entry.device_system || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Contact Method</span><span className="font-medium">{entry.best_contact_method || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Best Contact Time</span><span className="font-medium">{entry.best_contact_time || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Assigned To</span><span className="font-medium">{entry.assigned_to || '-'}</span></div>
+                <div className="col-span-2"><span className="text-gray-600 text-sm block">Description of Issue</span><p className="font-medium bg-gray-50 p-3 rounded-lg mt-1">{entry.description_of_issue || '-'}</p></div>
+                {entry.resolution_notes && <div className="col-span-2"><span className="text-gray-600 text-sm block">Resolution Notes</span><p className="font-medium bg-emerald-50 p-3 rounded-lg mt-1 text-emerald-800">{entry.resolution_notes}</p></div>}
+                {entry.resolved_at && <div><span className="text-gray-600 text-sm block">Resolved At</span><span className="font-medium">{formatDateTime(entry.resolved_at)}</span></div>}
+              </div>
+
+              {/* Edit Section for IT Requests */}
+              {canEdit && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  {!isEditing ? (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="w-full py-3 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                    >
+                      <Edit3 className="w-4 h-4" /> Update Status & Assignment
+                    </button>
+                  ) : (
+                    <div className="space-y-4 bg-cyan-50 p-4 rounded-xl border border-cyan-200">
+                      <h4 className="font-semibold text-cyan-800 flex items-center gap-2">
+                        <Edit3 className="w-4 h-4" /> Update IT Request
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 mb-1.5 block">Status</label>
+                          <select
+                            value={editForm.status}
+                            onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                            className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none focus:border-cyan-400 bg-white"
+                          >
+                            {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 mb-1.5 block">Assign To</label>
+                          <select
+                            value={editForm.assigned_to}
+                            onChange={e => setEditForm({ ...editForm, assigned_to: e.target.value })}
+                            className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none focus:border-cyan-400 bg-white"
+                          >
+                            <option value="">Unassigned</option>
+                            {itUsers?.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1.5 block">Resolution Notes</label>
+                        <textarea
+                          value={editForm.resolution_notes}
+                          onChange={e => setEditForm({ ...editForm, resolution_notes: e.target.value })}
+                          placeholder="Add resolution notes..."
+                          rows={3}
+                          className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none focus:border-cyan-400 bg-white resize-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSave}
+                          className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
+                        >
+                          Save Changes
+                        </button>
+                        <button
+                          onClick={() => setIsEditing(false)}
+                          className="px-4 py-2.5 bg-gray-200 rounded-xl font-medium hover:bg-gray-300 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2123,7 +2224,19 @@ return (
       <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />
 
         
-    <EntryPreview entry={viewingEntry} module={currentModule} onClose={() => setViewingEntry(null)} colors={currentColors} onViewDocument={viewDocument} />
+<EntryPreview 
+  entry={viewingEntry} 
+  module={currentModule} 
+  onClose={() => setViewingEntry(null)} 
+  colors={currentColors} 
+  onViewDocument={viewDocument}
+  currentUser={currentUser}
+  itUsers={itUsers}
+  onUpdateStatus={(entryId, newStatus, additionalFields) => {
+    updateEntryStatus('it-requests', entryId, newStatus, additionalFields);
+    setViewingEntry(null);
+  }}
+/>
       <FloatingChat messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={askAI} loading={aiLoading} userRole={currentUser?.role} />
 
       {/* Sidebar */}
@@ -3708,93 +3821,61 @@ const totalDeposited = filteredData.reduce((sum, r) => {
               );
             }
 
-            // IT Requests - clickable card
-            if (activeModule === 'it-requests') {
-              return (
-                <div 
-                  key={e.id}
-                  className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all cursor-pointer`}
-                  onClick={() => setViewingEntry(e)}
-                >
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap mb-2">
-                        <span className="font-bold text-cyan-600">IT-{e.ticket_number}</span>
-                        <StatusBadge status={e.status} />
-                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
-                          e.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
-                          e.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 
-                          e.urgency === 'Medium' ? 'bg-amber-100 text-amber-700' : 
-                          'bg-gray-100 text-gray-600'
-                        }`}>{e.urgency || 'Low'}</span>
-                      </div>
-                      
-                      <p className="font-medium text-gray-800">{e.requester_name}</p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {e.locations?.name} • {new Date(e.created_at).toLocaleDateString()}
-                      </p>
-                      
-                      {e.assigned_to && (
-                        <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
-                          <User className="w-3 h-3" /> Assigned: {e.assigned_to}
-                        </p>
-                      )}
-                      
-                      {docs.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {docs.map(doc => (
-                            <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs" onClick={ev => ev.stopPropagation()}>
-                              <File className="w-3 h-3 text-gray-400" />
-                              <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
-                              <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
-                                <Eye className="w-3 h-3" />
-                              </button>
-                              <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
-                                <Download className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2" onClick={ev => ev.stopPropagation()}>
-                      {editingStatus === e.id ? (
-                        <div className="space-y-2 w-48">
-                          <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                            {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                          <select defaultValue={e.assigned_to || ''} id={`assigned-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                            <option value="">Unassigned</option>
-                            {itUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                          </select>
-                          <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" defaultValue={e.resolution_notes || ''} className="w-full p-2 border-2 rounded-lg text-sm" />
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { 
-                                resolution_notes: document.getElementById(`notes-${e.id}`).value,
-                                assigned_to: document.getElementById(`assigned-${e.id}`).value || null
-                              })}
-                              className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
-                            >
-                              Save
-                            </button>
-                            <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button 
-                          onClick={() => setEditingStatus(e.id)} 
-                          className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                          <Edit3 className="w-4 h-4" /> Update
-                        </button>
-                      )}
-                    </div>
-                  </div>
+// IT Requests - clickable card
+if (activeModule === 'it-requests') {
+  return (
+    <div 
+      key={e.id}
+      className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all cursor-pointer`}
+      onClick={() => setViewingEntry(e)}
+    >
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className="font-bold text-cyan-600">IT-{e.ticket_number}</span>
+            <span className="text-xs text-gray-500">Status:</span>
+            <StatusBadge status={e.status} />
+            <span className="text-xs text-gray-500">Urgency:</span>
+            <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
+              e.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
+              e.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 
+              e.urgency === 'Medium' ? 'bg-amber-100 text-amber-700' : 
+              'bg-gray-100 text-gray-600'
+            }`}>{e.urgency || 'Low'}</span>
+          </div>
+          
+          <p className="font-medium text-gray-800">{e.requester_name}</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {e.locations?.name} • {new Date(e.created_at).toLocaleDateString()}
+          </p>
+          
+          {e.assigned_to && (
+            <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+              <User className="w-3 h-3" /> Assigned: {e.assigned_to}
+            </p>
+          )}
+          
+          {docs.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {docs.map(doc => (
+                <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs" onClick={ev => ev.stopPropagation()}>
+                  <File className="w-3 h-3 text-gray-400" />
+                  <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                  <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                    <Eye className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                    <Download className="w-3 h-3" />
+                  </button>
                 </div>
-              );
-            }
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
             // Default handling for other modules
             return (
