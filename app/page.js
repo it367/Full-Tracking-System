@@ -1051,119 +1051,118 @@ setCurrentUser(user);
 };
 
 const addUser = async () => {
-    if (!newUser.name || !newUser.username || !newUser.email || !newUser.password) {
-      showMessage('error', 'Please fill all required fields');
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to create user "${newUser.name}"?`)) return;
-      showMessage('error', 'Please fill all required fields');
-      return;
-    }
+  if (!newUser.name || !newUser.username || !newUser.email || !newUser.password) {
+    showMessage('error', 'Please fill all required fields');
+    return;
+  }
 
-    // Check if username already exists
+  if (!window.confirm(`Are you sure you want to create user "${newUser.name}"?`)) return;
+
+  // Check if username already exists
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('username', newUser.username.toLowerCase())
+    .maybeSingle();
+  
+  if (existingUser) {
+    showMessage('error', 'Username already exists');
+    return;
+  }
+
+  const { data: createdUser, error } = await supabase
+    .from('users')
+    .insert({
+      name: newUser.name,
+      username: newUser.username.toLowerCase(),
+      email: newUser.email.toLowerCase(),
+      password_hash: newUser.password,
+      role: newUser.role,
+      created_by: currentUser.id
+    })
+    .select()
+    .single();
+
+  if (error) {
+    showMessage('error', error.message.includes('duplicate') ? 'Email already exists' : 'Failed to create user');
+    return;
+  }
+
+  if (newUser.role === 'staff' && newUser.locations.length > 0) {
+    const locationAssignments = newUser.locations.map(locId => ({
+      user_id: createdUser.id,
+      location_id: locId,
+      assigned_by: currentUser.id
+    }));
+    await supabase.from('user_locations').insert(locationAssignments);
+  }
+
+  showMessage('success', '✓ User created successfully!');
+  setNewUser({ name: '', username: '', email: '', password: '', role: 'staff', locations: [] });
+  setShowAddUser(false);
+  loadUsers();
+};
+
+const updateUser = async () => {
+  if (!editingUser.name || !editingUser.email) {
+    showMessage('error', 'Please fill all required fields');
+    return;
+  }
+
+  if (!window.confirm(`Are you sure you want to update user "${editingUser.name}"?`)) return;
+
+  // Check if username is taken by another user (if username provided)
+  if (editingUser.username) {
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
-      .eq('username', newUser.username.toLowerCase())
+      .eq('username', editingUser.username.toLowerCase())
+      .neq('id', editingUser.id)
       .maybeSingle();
     
     if (existingUser) {
-      showMessage('error', 'Username already exists');
+      showMessage('error', 'Username already taken by another user');
       return;
     }
+  }
 
-const { data: createdUser, error } = await supabase
-      .from('users')
-      .insert({
-        name: newUser.name,
-        username: newUser.username.toLowerCase(),
-        email: newUser.email.toLowerCase(),
-        password_hash: newUser.password,
-        role: newUser.role,
-        created_by: currentUser.id
-      })
-      .select()
-      .single();
-
-    if (error) {
-      showMessage('error', error.message.includes('duplicate') ? 'Email already exists' : 'Failed to create user');
-      return;
-    }
-
-    if (newUser.role === 'staff' && newUser.locations.length > 0) {
-      const locationAssignments = newUser.locations.map(locId => ({
-        user_id: createdUser.id,
-        location_id: locId,
-        assigned_by: currentUser.id
-      }));
-      await supabase.from('user_locations').insert(locationAssignments);
-    }
-
-    showMessage('success', '✓ User created successfully!');
-    setNewUser({ name: '', username: '', email: '', password: '', role: 'staff', locations: [] });
-    setShowAddUser(false);
-    loadUsers();
+  const updateData = {
+    name: editingUser.name,
+    email: editingUser.email.toLowerCase(),
+    role: editingUser.role,
+    updated_by: currentUser.id
   };
 
-const updateUser = async () => {
-    if (!editingUser.name || !editingUser.email) {
-      showMessage('error', 'Please fill all required fields');
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to update user "${editingUser.name}"?`)) return;
+  // Only update username if provided
+  if (editingUser.username) {
+    updateData.username = editingUser.username.toLowerCase();
+  }
 
-    // Check if username is taken by another user (if username provided)
-    if (editingUser.username) {
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', editingUser.username.toLowerCase())
-        .neq('id', editingUser.id)
-        .maybeSingle();
-      
-      if (existingUser) {
-        showMessage('error', 'Username already taken by another user');
-        return;
-      }
-    }
+  if (editingUser.newPassword) {
+    updateData.password_hash = editingUser.newPassword;
+  }
 
-    const updateData = {
-      name: editingUser.name,
-      email: editingUser.email.toLowerCase(),
-      role: editingUser.role,
-      updated_by: currentUser.id
-    };
+  const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
 
-    // Only update username if provided
-    if (editingUser.username) {
-      updateData.username = editingUser.username.toLowerCase();
-    }
+  if (error) {
+    showMessage('error', 'Failed to update user');
+    return;
+  }
 
-    if (editingUser.newPassword) {
-      updateData.password_hash = editingUser.newPassword;
-    }
+  await supabase.from('user_locations').delete().eq('user_id', editingUser.id);
+  if (editingUser.role === 'staff' && editingUser.locationIds?.length > 0) {
+    const locationAssignments = editingUser.locationIds.map(locId => ({
+      user_id: editingUser.id,
+      location_id: locId,
+      assigned_by: currentUser.id
+    }));
+    await supabase.from('user_locations').insert(locationAssignments);
+  }
 
-    const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
-
-    if (error) {
-      showMessage('error', 'Failed to update user');
-      return;
-    }
-
-    await supabase.from('user_locations').delete().eq('user_id', editingUser.id);
-    if (editingUser.role === 'staff' && editingUser.locationIds?.length > 0) {
-      const locationAssignments = editingUser.locationIds.map(locId => ({
-        user_id: editingUser.id,
-        location_id: locId,
-        assigned_by: currentUser.id
-      }));
-      await supabase.from('user_locations').insert(locationAssignments);
-    }
-
-    showMessage('success', '✓ User updated!');
-    setEditingUser(null);
-    loadUsers();
-  };
+  showMessage('success', '✓ User updated!');
+  setEditingUser(null);
+  loadUsers();
+};
 
 const deleteUser = async (id) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
@@ -1222,7 +1221,10 @@ const changePassword = async () => {
     setPwdForm({ current: '', new: '', confirm: '' });
     showMessage('success', '✓ Password changed successfully!');
   };
+  
 const changeName = async () => {
+  if (!nameForm.trim()) {
+    showMessage('erconst changeName = async () => {
   if (!nameForm.trim()) {
     showMessage('error', 'Name cannot be empty');
     return;
@@ -1240,6 +1242,7 @@ const changeName = async () => {
   setCurrentUser({ ...currentUser, name: nameForm.trim() });
   showMessage('success', '✓ Name updated successfully!');
 };
+  
   const updateForm = (module, field, value) => {
     setForms(prev => ({ ...prev, [module]: { ...prev[module], [field]: value } }));
   };
