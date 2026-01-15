@@ -3562,11 +3562,11 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                         {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
                       </p>
                     </div>
-{!isEditing && (
+                    {!isEditing && (
                       <div className="flex items-center gap-1">
-                      <button onClick={() => setViewingEntry(e)} className="text-sm font-medium text-gray-500 hover:text-purple-600 flex items-center gap-1">
-                        <Eye className="w-4 h-4" /> Preview
-                      </button>
+                        <button onClick={() => setViewingEntry(e)} className="text-sm font-medium text-gray-500 hover:text-purple-600 flex items-center gap-1">
+                          <Eye className="w-4 h-4" /> Preview
+                        </button>
                         <button
                           onClick={() => startEditingRecon(e)}
                           className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
@@ -3668,7 +3668,6 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                       </div>
                     </div>
                   ) : (
-                    // Show existing bank deposit data if any
                     (e.deposit_cash > 0 || e.deposit_credit_card > 0 || e.deposit_checks > 0 || e.status === 'Accounted') && (
                       <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
                         <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
@@ -3709,6 +3708,93 @@ const totalDeposited = filteredData.reduce((sum, r) => {
               );
             }
 
+            // IT Requests - clickable card
+            if (activeModule === 'it-requests') {
+              return (
+                <div 
+                  key={e.id}
+                  className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all cursor-pointer`}
+                  onClick={() => setViewingEntry(e)}
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        <span className="font-bold text-cyan-600">IT-{e.ticket_number}</span>
+                        <StatusBadge status={e.status} />
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
+                          e.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
+                          e.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 
+                          e.urgency === 'Medium' ? 'bg-amber-100 text-amber-700' : 
+                          'bg-gray-100 text-gray-600'
+                        }`}>{e.urgency || 'Low'}</span>
+                      </div>
+                      
+                      <p className="font-medium text-gray-800">{e.requester_name}</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {e.locations?.name} • {new Date(e.created_at).toLocaleDateString()}
+                      </p>
+                      
+                      {e.assigned_to && (
+                        <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+                          <User className="w-3 h-3" /> Assigned: {e.assigned_to}
+                        </p>
+                      )}
+                      
+                      {docs.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {docs.map(doc => (
+                            <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs" onClick={ev => ev.stopPropagation()}>
+                              <File className="w-3 h-3 text-gray-400" />
+                              <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                              <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                                <Eye className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                                <Download className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2" onClick={ev => ev.stopPropagation()}>
+                      {editingStatus === e.id ? (
+                        <div className="space-y-2 w-48">
+                          <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+                            {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <select defaultValue={e.assigned_to || ''} id={`assigned-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
+                            <option value="">Unassigned</option>
+                            {itUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                          </select>
+                          <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" defaultValue={e.resolution_notes || ''} className="w-full p-2 border-2 rounded-lg text-sm" />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { 
+                                resolution_notes: document.getElementById(`notes-${e.id}`).value,
+                                assigned_to: document.getElementById(`assigned-${e.id}`).value || null
+                              })}
+                              className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
+                            >
+                              Save
+                            </button>
+                            <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => setEditingStatus(e.id)} 
+                          className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          <Edit3 className="w-4 h-4" /> Update
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             // Default handling for other modules
             return (
@@ -3717,7 +3803,7 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-gray-800">
-                        {e.ticket_number ? `IT-${e.ticket_number}` : e.patient_name || e.vendor || e.recon_date || e.created_at?.split('T')[0]}
+                        {e.patient_name || e.vendor || e.created_at?.split('T')[0]}
                       </p>
                       <StatusBadge status={e.status} />
                     </div>
@@ -3725,126 +3811,39 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                       {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
                     </p>
                     {e.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.description}</p>}
-                    {e.description_of_issue && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{e.description_of_issue}</p>}
                     {(e.amount || e.amount_requested || e.amount_in_question) && (
                       <p className="text-lg font-bold text-emerald-600 mt-2">
                         ${Number(e.amount || e.amount_requested || e.amount_in_question || 0).toFixed(2)}
                       </p>
                     )}
                     
-                  {/* Documents */}
-                  {docs.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {docs.map(doc => (
-                        <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
-                          <File className="w-3 h-3 text-gray-400" />
-                          <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
-                          <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
-                            <Eye className="w-3 h-3" />
-                          </button>
-                          <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
-                            <Download className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            }
+                    {docs.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {docs.map(doc => (
+                          <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
+                            <File className="w-3 h-3 text-gray-400" />
+                            <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                            <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                              <Eye className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                              <Download className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-            // IT Requests - clickable card
-            if (activeModule === 'it-requests') {
-              return (
-    <div 
-      key={e.id}
-      className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all cursor-pointer`}
-      onClick={() => setViewingEntry(e)}
-    >
-      <div className="flex justify-between items-start gap-4">
-        <div className="flex-1">
-          {/* Header Row */}
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className="font-bold text-cyan-600">IT-{e.ticket_number}</span>
-            <StatusBadge status={e.status} />
-            <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
-              e.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
-              e.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 
-              e.urgency === 'Medium' ? 'bg-amber-100 text-amber-700' : 
-              'bg-gray-100 text-gray-600'
-            }`}>{e.urgency || 'Low'}</span>
-          </div>
-          
-          {/* Main Info */}
-          <p className="font-medium text-gray-800">{e.requester_name}</p>
-          <p className="text-sm text-gray-500 mt-1">
-            {e.locations?.name} • {new Date(e.created_at).toLocaleDateString()}
-          </p>
-          
-          {/* Assigned To */}
-          {e.assigned_to && (
-            <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
-              <User className="w-3 h-3" /> Assigned: {e.assigned_to}
-            </p>
-          )}
-          
-          {/* Documents */}
-          {docs.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {docs.map(doc => (
-                <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs" onClick={ev => ev.stopPropagation()}>
-                  <File className="w-3 h-3 text-gray-400" />
-                  <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
-                  <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
-                    <Eye className="w-3 h-3" />
-                  </button>
-                  <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
-                    <Download className="w-3 h-3" />
+                  <button onClick={() => setViewingEntry(e)} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Preview">
+                    <Eye className="w-4 h-4" />
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2" onClick={ev => ev.stopPropagation()}>
-          {editingStatus === e.id ? (
-            <div className="space-y-2 w-48">
-              <select defaultValue={e.status} id={`status-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                {IT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select defaultValue={e.assigned_to || ''} id={`assigned-${e.id}`} className="w-full p-2 border-2 rounded-lg text-sm">
-                <option value="">Unassigned</option>
-                {itUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-              </select>
-              <input type="text" id={`notes-${e.id}`} placeholder="Resolution notes" defaultValue={e.resolution_notes || ''} className="w-full p-2 border-2 rounded-lg text-sm" />
-              <div className="flex gap-1">
-                <button
-                  onClick={() => updateEntryStatus('it-requests', e.id, document.getElementById(`status-${e.id}`).value, { 
-                    resolution_notes: document.getElementById(`notes-${e.id}`).value,
-                    assigned_to: document.getElementById(`assigned-${e.id}`).value || null
-                  })}
-                  className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium"
-                >
-                  Save
-                </button>
-                <button onClick={() => setEditingStatus(null)} className="px-3 py-2 bg-gray-200 rounded-lg text-xs">Cancel</button>
               </div>
-            </div>
-          ) : (
-            <button 
-              onClick={() => setEditingStatus(e.id)} 
-              className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-1"
-            >
-              <Edit3 className="w-4 h-4" /> Update
-            </button>
-          )}
+            );
+          })}
         </div>
-      </div>
-    </div>
-  );
-}
+      )}
       
       {/* Pagination Controls */}
       {!loading && getModuleEntries().length > 0 && recordsPerPage !== 'all' && getTotalPages() > 1 && (
