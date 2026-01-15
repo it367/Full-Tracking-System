@@ -3758,7 +3758,8 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                   )}
             </div>
           );
-        
+}
+
 // IT Requests - clickable card
 if (activeModule === 'it-requests') {
   return (
