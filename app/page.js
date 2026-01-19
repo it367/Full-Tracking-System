@@ -2782,7 +2782,7 @@ return (
 </div>
             <div className="flex items-center gap-4">
               {loading && <Loader2 className="w-5 h-5 animate-spin text-gray-400" />}
-              <img src="/kidshine.png" alt="KidShine Hawaii" className="h-12 w-32 hidden sm:block object-contain" />
+              <img src="/kidshine.png" alt="KidShine Hawaii" className="h-16 w-48 hidden sm:block object-contain" />
             </div>
           </div>
 
