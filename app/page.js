@@ -1,4 +1,4 @@
-//Clinic Management System v0.43
+//Clinic Management System v0.46
 // Devoloper: Mark Murillo 
 // Company: Kidshine Hawaii
 
@@ -2494,7 +2494,7 @@ if (!currentUser) {
             {loginLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Login →'}
           </button>
           
-          <p className="text-xs text-center text-gray-400">BETA Version 0.43</p>
+          <p className="text-xs text-center text-gray-400">BETA Version 0.46</p>
         </div>
       </div>
     </div>
@@ -2788,12 +2788,32 @@ return (
           </div>
         </header>
 
-        {message.text && (
-          <div className={`mx-4 mt-4 p-4 rounded-xl text-center font-medium shadow-sm flex items-center justify-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-700'}`}>
-            {message.type === 'error' ? <AlertCircle className="w-4 h-4" /> : null}
-            {message.text}
+{/* Floating Toast Notification */}
+      {message.text && (
+        <div className={`fixed bottom-24 right-6 z-50 max-w-sm animate-in slide-in-from-right-5 fade-in duration-300`}>
+          <div className={`p-4 rounded-xl shadow-lg border-l-4 flex items-center gap-3 ${
+            message.type === 'error' 
+              ? 'bg-white border-l-red-500 text-red-700 shadow-red-100' 
+              : 'bg-white border-l-emerald-500 text-emerald-700 shadow-emerald-100'
+          }`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+              message.type === 'error' ? 'bg-red-100' : 'bg-emerald-100'
+            }`}>
+              {message.type === 'error' 
+                ? <AlertCircle className="w-4 h-4 text-red-600" /> 
+                : <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              }
+            </div>
+            <p className="font-medium text-sm">{message.text}</p>
+            <button 
+              onClick={() => setMessage({ type: '', text: '' })} 
+              className="ml-2 p-1 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+            >
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
         <main className="flex-1 p-4 max-w-4xl mx-auto w-full pb-24">
           {/* ADMIN: User Management */}
