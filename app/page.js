@@ -1744,42 +1744,46 @@ if (!confirmed) return;
     showMessage('success', '✓ Export complete!');
   };
 
-  const askAI = async () => {
-    if (!chatInput.trim()) return;
+const askAI = async () => {
+  if (!chatInput.trim()) return;
 
-    const userMessage = chatInput;
-    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setChatInput('');
-    setAiLoading(true);
+  const userMessage = chatInput;
+  setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+  setChatInput('');
+  setAiLoading(true);
 
-    let dataSummary = '\n📊 SYSTEM OVERVIEW:\n';
-    
-    for (const mod of ALL_MODULES) {
-      const data = moduleData[mod.id] || [];
-      if (data.length > 0) {
-        dataSummary += `\n${mod.name}: ${data.length} records`;
-      }
-    }
+  try {
+    // Send full user context so AI knows who is talking
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: userMessage }],
+        userContext: {
+          userName: currentUser?.name || null,
+          userEmail: currentUser?.email || null,
+          userRole: currentUser?.role || null,
+          userId: currentUser?.id || null,
+          currentLocation: isAdmin ? (adminLocation || 'All Locations') : (selectedLocation || null),
+          currentModule: activeModule || null,
+          isLoggedIn: !!currentUser,
+          isAdmin: currentUser?.role === 'super_admin' || currentUser?.role === 'finance_admin',
+          isSuperAdmin: currentUser?.role === 'super_admin',
+          isIT: currentUser?.role === 'it'
+        }
+      })
+    });
 
-    dataSummary += `\n\n📍 Locations: ${locations.map(l => l.name).join(', ')}`;
-    dataSummary += `\n👤 Current user: ${currentUser?.name} (${currentUser?.role})`;
+    const data = await response.json();
+    const aiResponse = data.content?.[0]?.text || 'Sorry, I could not process that request.';
+    setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+  } catch (error) {
+    console.error('AI error:', error);
+    setChatMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Please try again.' }]);
+  }
 
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }], dataSummary })
-      });
-
-      const data = await response.json();
-      const aiResponse = data.content?.[0]?.text || 'Sorry, I could not process that request.';
-      setChatMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
-    } catch (error) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '❌ Unable to connect to AI.' }]);
-    }
-
-    setAiLoading(false);
-  };
+  setAiLoading(false);
+};
 
   const getDocumentUrl = async (storagePath) => {
     const { data } = await supabase.storage
