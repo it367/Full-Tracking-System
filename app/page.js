@@ -4182,16 +4182,16 @@ if (activeModule === 'it-requests') {
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-
-<div className="flex items-center gap-1">
-                    <button onClick={() => setViewingEntry(e)} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>
-                    <button onClick={() => deleteRecord(activeModule, e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+)}
                   </div>
                 </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setViewingEntry(e)} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>
+                  <button onClick={() => deleteRecord(activeModule, e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                </div>
               </div>
-            );
+            </div>
+          );
           })}
         </div>
       )}
