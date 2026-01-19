@@ -718,6 +718,8 @@ const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', mes
 const [passwordDialog, setPasswordDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, password: '', error: '' });
 const [selectedRecords, setSelectedRecords] = useState([]);
 const [selectAll, setSelectAll] = useState(false);
+const [selectedDocuments, setSelectedDocuments] = useState([]);
+const [docSelectAll, setDocSelectAll] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [newUser, setNewUser] = useState({ name: '', username: '', email: '', password: '', role: 'staff', locations: [] });
@@ -869,6 +871,7 @@ useEffect(() => { if (currentUser) setNameForm(currentUser.name || ''); }, [curr
 useEffect(() => { setCurrentPage(1); setRecordSearch(''); }, [activeModule, adminLocation]);
   useEffect(() => { setStaffCurrentPage(1); setStaffRecordSearch(''); setEditingStaffEntry(null); }, [activeModule, selectedLocation]);
 useEffect(() => { setSelectedRecords([]); setSelectAll(false); }, [activeModule, adminLocation, currentPage, recordSearch]);
+  useEffect(() => { setSelectedDocuments([]); setDocSelectAll(false); }, [adminView, docSearch]);
   useEffect(() => {
   if (viewingEntry && activeModule === 'it-requests') {
     loadItUsers();
@@ -1992,6 +1995,64 @@ const askAI = async () => {
     }
   };
 
+const deleteDocument = async (doc) => {
+  const confirmed = await showConfirm('Delete Document', `Are you sure you want to delete "${doc.file_name}"? This action cannot be undone.`, 'Delete', 'red');
+  if (!confirmed) return;
+
+  // Delete from storage
+  const { error: storageError } = await supabase.storage
+    .from('clinic-documents')
+    .remove([doc.storage_path]);
+
+  if (storageError) {
+    console.error('Storage delete error:', storageError);
+  }
+
+  // Delete from documents table
+  const { error: dbError } = await supabase
+    .from('documents')
+    .delete()
+    .eq('id', doc.id);
+
+  if (dbError) {
+    showMessage('error', 'Failed to delete document: ' + dbError.message);
+    return;
+  }
+
+  showMessage('success', '✓ Document deleted successfully');
+  loadDocuments();
+};
+
+const deleteSelectedDocuments = async (selectedDocs) => {
+  if (selectedDocs.length === 0) {
+    showMessage('error', 'No documents selected');
+    return;
+  }
+
+  const confirmed = await showConfirm('Delete Selected Documents', `Are you sure you want to delete ${selectedDocs.length} document(s)? This action cannot be undone.`, 'Delete All', 'red');
+  if (!confirmed) return;
+
+  const passwordValid = await showPasswordConfirm('Confirm Password', `Enter your password to delete ${selectedDocs.length} document(s)`);
+  if (!passwordValid) {
+    if (passwordValid === false) showMessage('error', 'Incorrect password');
+    return;
+  }
+
+  let successCount = 0, errorCount = 0;
+
+  for (const doc of selectedDocs) {
+    // Delete from storage
+    await supabase.storage.from('clinic-documents').remove([doc.storage_path]);
+    
+    // Delete from database
+    const { error } = await supabase.from('documents').delete().eq('id', doc.id);
+    if (error) errorCount++; else successCount++;
+  }
+
+  showMessage(errorCount > 0 ? 'error' : 'success', errorCount > 0 ? `Deleted ${successCount} documents. ${errorCount} failed.` : `✓ ${successCount} document(s) deleted successfully`);
+  loadDocuments();
+};
+  
 const getModuleEntries = () => {
   let data = moduleData[activeModule] || [];
   
@@ -3574,87 +3635,158 @@ const totalDeposited = filteredData.reduce((sum, r) => {
 
 {/* ADMIN: Documents */}
 {isAdmin && adminView === 'documents' && (
-  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-3">
-        <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
-          <FolderOpen className="w-6 h-6 text-white" />
+  <div className="space-y-4">
+    <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+            <FolderOpen className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-800">All Uploaded Documents</h2>
+            <p className="text-sm text-gray-500">{documents.filter(doc => {
+              if (!docSearch) return true;
+              const search = docSearch.toLowerCase();
+              return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
+            }).length} files</p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-semibold text-gray-800">All Uploaded Documents</h2>
-          <p className="text-sm text-gray-500">{documents.filter(doc => {
+        <div className="relative w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={docSearch}
+            onChange={e => setDocSearch(e.target.value)}
+            placeholder="Search documents..."
+            className="w-full pl-10 pr-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-purple-400 outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Selection Controls */}
+      {documents.length > 0 && (
+        <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                const filteredDocs = documents.filter(doc => {
+                  if (!docSearch) return true;
+                  const search = docSearch.toLowerCase();
+                  return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
+                });
+                if (docSelectAll) {
+                  setSelectedDocuments([]);
+                  setDocSelectAll(false);
+                } else {
+                  setSelectedDocuments(filteredDocs);
+                  setDocSelectAll(true);
+                }
+              }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${docSelectAll ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${docSelectAll ? 'bg-purple-600 border-purple-600' : 'border-gray-300'}`}>
+                {docSelectAll && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+              </div>
+              {docSelectAll ? 'Deselect All' : 'Select All'}
+            </button>
+            {selectedDocuments.length > 0 && (
+              <span className="text-sm text-purple-600 font-medium">{selectedDocuments.length} selected</span>
+            )}
+          </div>
+          {selectedDocuments.length > 0 && (
+            <button
+              onClick={() => {
+                deleteSelectedDocuments(selectedDocuments);
+                setSelectedDocuments([]);
+                setDocSelectAll(false);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-lg text-sm font-medium hover:shadow-lg transition-all"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Selected ({selectedDocuments.length})
+            </button>
+          )}
+        </div>
+      )}
+
+      {documents.filter(doc => {
+        if (!docSearch) return true;
+        const search = docSearch.toLowerCase();
+        return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
+      }).length === 0 ? (
+        <p className="text-gray-500 text-center py-8">{docSearch ? 'No documents match your search' : 'No documents uploaded yet'}</p>
+      ) : (
+        <div className="space-y-2">
+          {documents.filter(doc => {
             if (!docSearch) return true;
             const search = docSearch.toLowerCase();
             return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
-          }).length} files</p>
-        </div>
-      </div>
-      <div className="relative w-64">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          value={docSearch}
-          onChange={e => setDocSearch(e.target.value)}
-          placeholder="Search documents..."
-          className="w-full pl-10 pr-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-purple-400 outline-none"
-        />
-      </div>
-    </div>
-    {documents.filter(doc => {
-      if (!docSearch) return true;
-      const search = docSearch.toLowerCase();
-      return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
-    }).length === 0 ? (
-      <p className="text-gray-500 text-center py-8">{docSearch ? 'No documents match your search' : 'No documents uploaded yet'}</p>
-    ) : (
-      <div className="space-y-2">
-        {documents.filter(doc => {
-          if (!docSearch) return true;
-          const search = docSearch.toLowerCase();
-          return doc.file_name?.toLowerCase().includes(search) || doc.record_type?.toLowerCase().includes(search) || doc.category?.toLowerCase().includes(search) || doc.uploader?.name?.toLowerCase().includes(search);
-        }).map(doc => (
-          <div key={doc.id} className="p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <File className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-800 truncate">{doc.file_name}</p>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md font-medium">{getModuleName(doc.record_type)}</span>
-                    <span>•</span>
-                    <span>ID: {doc.record_id?.slice(0, 8)}...</span>
-                    <span>•</span>
-                    <span>{doc.category}</span>
-                    <span>•</span>
-                    <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
+          }).map(doc => {
+            const isSelected = selectedDocuments.some(d => d.id === doc.id);
+            return (
+              <div key={doc.id} className={`p-4 rounded-xl border-2 transition-all ${isSelected ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-200' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <button
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedDocuments(selectedDocuments.filter(d => d.id !== doc.id));
+                          setDocSelectAll(false);
+                        } else {
+                          setSelectedDocuments([...selectedDocuments, doc]);
+                        }
+                      }}
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? 'bg-purple-600 border-purple-600' : 'border-gray-300 hover:border-purple-400'}`}
+                    >
+                      {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    </button>
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <File className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-800 truncate">{doc.file_name}</p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md font-medium">{getModuleName(doc.record_type)}</span>
+                        <span>•</span>
+                        <span>ID: {doc.record_id?.slice(0, 8)}...</span>
+                        <span>•</span>
+                        <span>{doc.category}</span>
+                        <span>•</span>
+                        <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
+                      </div>
+                      {doc.uploader && <p className="text-xs text-gray-400 mt-1">Uploaded by: {doc.uploader.name}</p>}
+                    </div>
                   </div>
-                  {doc.uploader && <p className="text-xs text-gray-400 mt-1">Uploaded by: {doc.uploader.name}</p>}
+                  <div className="flex items-center gap-2 ml-4">
+                    <span className="text-sm text-gray-500">{(doc.file_size / 1024).toFixed(1)} KB</span>
+                    <button
+                      onClick={() => viewDocument(doc)}
+                      className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Preview"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => downloadDocument(doc)}
+                      className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteDocument(doc)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 ml-4">
-                <span className="text-sm text-gray-500">{(doc.file_size / 1024).toFixed(1)} KB</span>
-                <button
-                  onClick={() => viewDocument(doc)}
-                  className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Preview"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => downloadDocument(doc)}
-                  className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
+            );
+          })}
+        </div>
+      )}
+    </div>
   </div>
 )}
           {/* ADMIN: Export */}
