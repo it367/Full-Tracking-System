@@ -2427,7 +2427,9 @@ const getStaffTotalPages = () => {
 // LOGIN SCREEN
 if (!currentUser) {
   return (
-<div className="text-center mb-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
+        <div className="text-center mb-8">
           <div className="w-24 h-24 mx-auto mb-4">
             <img src="/kidshine.png" alt="KidShine Hawaii" className="w-full h-full object-contain" />
           </div>
@@ -2500,7 +2502,7 @@ if (!currentUser) {
             {loginLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Login →'}
           </button>
           
-          <p className="text-xs text-center text-gray-400">BETA Version 0.46</p>
+<p className="text-xs text-center text-gray-400">BETA Version 0.46</p>
         </div>
       </div>
     </div>
@@ -2508,6 +2510,7 @@ if (!currentUser) {
 }
 
   // LOCATION SELECTION
+
   if (!isAdmin && !selectedLocation && userLocations.length > 1) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
