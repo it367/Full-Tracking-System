@@ -2430,7 +2430,7 @@ if (!currentUser) {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
       <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-white/20">
         <div className="text-center mb-8">
-<div className="w-20 h-20 mx-auto mb-4">
+<div className="w-64 h-20 mx-auto mb-4">
             <img src="/kidshine.png" alt="KidShine Hawaii" className="w-full h-full object-contain" />
           </div>
 <h1 className="text-2xl font-bold text-gray-800">CMS - KidShine Hawaii</h1>
@@ -2782,7 +2782,7 @@ return (
 </div>
             <div className="flex items-center gap-4">
               {loading && <Loader2 className="w-5 h-5 animate-spin text-gray-400" />}
-              <img src="/kidshine.png" alt="KidShine Hawaii" className="h-8 w-auto hidden sm:block object-contain" />
+              <img src="/kidshine.png" alt="KidShine Hawaii" className="h-12 w-32 hidden sm:block object-contain" />
             </div>
           </div>
 
