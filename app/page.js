@@ -4859,6 +4859,54 @@ if (activeModule === 'it-requests') {
   );
 }
 
+// Order Requests - special handling with Invoice Number
+            if (activeModule === 'order-requests') {
+              return (
+                <div key={e.id} className={`p-4 rounded-xl border-2 ${currentColors?.border} ${currentColors?.bg} hover:shadow-md transition-all ${selectedRecords.includes(e.id) ? 'ring-2 ring-purple-500' : ''}`}>
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <button onClick={() => toggleRecordSelection(e.id)} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-1 transition-all ${selectedRecords.includes(e.id) ? 'bg-purple-600 border-purple-600' : 'border-gray-300 hover:border-purple-400'}`}>
+                        {selectedRecords.includes(e.id) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                      </button>
+                      <div className="flex-1 cursor-pointer" onClick={() => setViewingEntry(e)}>
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          {e.invoice_number && <span className="font-bold text-amber-600">INV# {e.invoice_number}</span>}
+                          <StatusBadge status={e.status} />
+                        </div>
+                        <p className="font-medium text-gray-800">{e.vendor || 'No Vendor'}</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {e.locations?.name} • {e.entered_by || e.creator?.name} • {e.date_entered ? new Date(e.date_entered).toLocaleDateString() : new Date(e.created_at).toLocaleDateString()}
+                          {e.due_date && <span className="text-amber-600"> • Due: {new Date(e.due_date).toLocaleDateString()}</span>}
+                        </p>
+                        <p className="text-lg font-bold text-emerald-600 mt-2">${Number(e.amount || 0).toFixed(2)}</p>
+                        
+                        {docs.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2" onClick={ev => ev.stopPropagation()}>
+                            {docs.map(doc => (
+                              <div key={doc.id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border text-xs">
+                                <File className="w-3 h-3 text-gray-400" />
+                                <span className="text-gray-600 max-w-24 truncate">{doc.file_name}</span>
+                                <button onClick={() => viewDocument(doc)} className="p-0.5 text-blue-500 hover:bg-blue-100 rounded" title="Preview">
+                                  <Eye className="w-3 h-3" />
+                                </button>
+                                <button onClick={() => downloadDocument(doc)} className="p-0.5 text-emerald-500 hover:bg-emerald-100 rounded" title="Download">
+                                  <Download className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1" onClick={ev => ev.stopPropagation()}>
+                      <button onClick={() => setViewingEntry(e)} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => deleteRecord(activeModule, e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
 // Bills Payment - special handling with Transaction ID
             if (activeModule === 'bills-payment') {
               return (
