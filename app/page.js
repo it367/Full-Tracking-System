@@ -205,7 +205,7 @@ function FileViewer({ file, onClose }) {
   );
 }
 
-function EntryPreview({ entry, module, onClose, colors, onViewDocument, currentUser, itUsers, financeAdminUsers, onUpdateStatus, onDelete, onUpdateBillingInquiry, onUpdateBillsPayment }) {
+function EntryPreview({ entry, module, onClose, colors, onViewDocument, currentUser, itUsers, financeAdminUsers, onUpdateStatus, onDelete, onUpdateBillingInquiry, onUpdateBillsPayment, onUpdateOrderRequest }) {
 const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     status: entry?.status || 'For Review',
@@ -218,6 +218,11 @@ const [billingEditForm, setBillingEditForm] = useState({
     date_reviewed: entry?.date_reviewed || '',
     result: entry?.result || '',
     paid: entry?.paid ?? null
+  });
+  const [orderEditForm, setOrderEditForm] = useState({
+    status: entry?.status || 'Pending',
+    reviewed_by: entry?.reviewed_by || '',
+    reviewed_at: entry?.reviewed_at || ''
   });
 
   useEffect(() => {
@@ -234,6 +239,11 @@ setBillingEditForm({
         result: entry.result || '',
         paid: entry.paid ?? null
       });
+      setOrderEditForm({
+        status: entry.status || 'Pending',
+        reviewed_by: entry.reviewed_by || '',
+        reviewed_at: entry.reviewed_at || ''
+      });
       setIsEditing(false);
     }
   }, [entry]);
@@ -247,8 +257,10 @@ setBillingEditForm({
 const isITRequest = module?.id === 'it-requests';
 const isBillingInquiry = module?.id === 'billing-inquiry';
   const isBillsPayment = module?.id === 'bills-payment';
+  const isOrderRequest = module?.id === 'order-requests';
   const canEditIT = isITRequest && currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'it');
   const canEditBilling = (isBillingInquiry || isBillsPayment) && currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'finance_admin');
+  const canEditOrders = isOrderRequest && currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'finance_admin');
 
 const handleSave = () => {
     if (onUpdateStatus) {
@@ -269,9 +281,17 @@ const handleBillingSave = () => {
     onClose();
   };
 
-  const handleBillsPaymentSave = () => {
+const handleBillsPaymentSave = () => {
     if (onUpdateBillsPayment) {
       onUpdateBillsPayment(entry.id, billingEditForm);
+    }
+    setIsEditing(false);
+    onClose();
+  };
+
+  const handleOrderSave = () => {
+    if (onUpdateOrderRequest) {
+      onUpdateOrderRequest(entry.id, orderEditForm);
     }
     setIsEditing(false);
     onClose();
@@ -567,17 +587,90 @@ const handleBillingSave = () => {
             </div>
           )}
 
-          {/* Order Requests */}
+{/* Order Requests */}
           {module?.id === 'order-requests' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div><span className="text-gray-600 text-sm block">Date Entered</span><span className="font-medium">{formatDate(entry.date_entered)}</span></div>
-              <div><span className="text-gray-600 text-sm block">Vendor</span><span className="font-medium">{entry.vendor || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Invoice Number</span><span className="font-medium">{entry.invoice_number || '-'}</span></div>
-              <div><span className="text-gray-600 text-sm block">Invoice Date</span><span className="font-medium">{formatDate(entry.invoice_date)}</span></div>
-              <div><span className="text-gray-600 text-sm block">Due Date</span><span className="font-medium">{formatDate(entry.due_date)}</span></div>
-              <div><span className="text-gray-600 text-sm block">Amount</span><span className="font-medium text-emerald-600">{formatCurrency(entry.amount)}</span></div>
-              <div><span className="text-gray-600 text-sm block">Entered By</span><span className="font-medium">{entry.entered_by || '-'}</span></div>
-              <div className="col-span-2"><span className="text-gray-600 text-sm block">Notes</span><p className="font-medium bg-gray-50 p-3 rounded-lg mt-1">{entry.notes || '-'}</p></div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><span className="text-gray-600 text-sm block">Date Entered</span><span className="font-medium">{formatDate(entry.date_entered)}</span></div>
+                <div><span className="text-gray-600 text-sm block">Vendor</span><span className="font-medium">{entry.vendor || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Invoice Number</span><span className="font-medium">{entry.invoice_number || '-'}</span></div>
+                <div><span className="text-gray-600 text-sm block">Invoice Date</span><span className="font-medium">{formatDate(entry.invoice_date)}</span></div>
+                <div><span className="text-gray-600 text-sm block">Due Date</span><span className="font-medium">{formatDate(entry.due_date)}</span></div>
+                <div><span className="text-gray-600 text-sm block">Amount</span><span className="font-medium text-emerald-600">{formatCurrency(entry.amount)}</span></div>
+                <div><span className="text-gray-600 text-sm block">Entered By</span><span className="font-medium">{entry.entered_by || '-'}</span></div>
+                <div className="col-span-2"><span className="text-gray-600 text-sm block">Notes</span><p className="font-medium bg-gray-50 p-3 rounded-lg mt-1">{entry.notes || '-'}</p></div>
+              </div>
+
+              {/* Review Section - Read Only */}
+              {!isEditing && entry.status === 'Reviewed' && (
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                  <h4 className="font-semibold text-amber-800 mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4" /> Review Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><span className="text-gray-600 text-sm block">Reviewed By</span><span className="font-medium">{entry.reviewed_by || '-'}</span></div>
+                    <div><span className="text-gray-600 text-sm block">Reviewed At</span><span className="font-medium">{formatDateTime(entry.reviewed_at)}</span></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Section for Order Requests - Admin Only */}
+              {canEditOrders && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  {!isEditing ? (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                    >
+                      <Edit3 className="w-4 h-4" /> Update Status
+                    </button>
+                  ) : (
+                    <div className="space-y-4 bg-amber-50 p-4 rounded-xl border border-amber-200">
+                      <h4 className="font-semibold text-amber-800 flex items-center gap-2">
+                        <Edit3 className="w-4 h-4" /> Review Order Request
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 mb-1.5 block">Status</label>
+                          <select
+                            value={orderEditForm.status}
+                            onChange={ev => setOrderEditForm({ ...orderEditForm, status: ev.target.value })}
+                            className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none focus:border-amber-400 bg-white"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Reviewed">Reviewed</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 mb-1.5 block">Reviewed By</label>
+                          <select
+                            value={orderEditForm.reviewed_by}
+                            onChange={ev => setOrderEditForm({ ...orderEditForm, reviewed_by: ev.target.value })}
+                            className="w-full p-2.5 border-2 border-gray-200 rounded-xl outline-none focus:border-amber-400 bg-white"
+                          >
+                            <option value="">Select Reviewer...</option>
+                            {financeAdminUsers?.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleOrderSave}
+                          className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
+                        >
+                          Save Review
+                        </button>
+                        <button
+                          onClick={() => setIsEditing(false)}
+                          className="px-4 py-2.5 bg-gray-200 rounded-xl font-medium hover:bg-gray-300 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2165,6 +2258,31 @@ const updateBillsPayment = async (entryId, formData) => {
   showMessage('success', '✓ Bills payment updated!');
   loadModuleData('bills-payment');
 };
+
+const updateOrderRequest = async (entryId, formData) => {
+  const confirmed = await showConfirm('Update Order Request', 'Are you sure you want to update this order request?', 'Update', 'amber');
+  if (!confirmed) return;
+
+  const updateData = {
+    status: formData.status,
+    reviewed_by: formData.reviewed_by || null,
+    reviewed_at: formData.status === 'Reviewed' ? new Date().toISOString() : null,
+    updated_by: currentUser.id
+  };
+
+  const { error } = await supabase
+    .from('order_requests')
+    .update(updateData)
+    .eq('id', entryId);
+
+  if (error) {
+    showMessage('error', 'Failed to update order request');
+    return;
+  }
+
+  showMessage('success', '✓ Order request updated!');
+  loadModuleData('order-requests');
+};
   
 const updateEntryStatus = async (moduleId, entryId, newStatus, additionalFields = {}) => {
 const confirmed = await showConfirm('Update Status', `Are you sure you want to update the status to "${newStatus}"?`, 'Update', 'blue');
@@ -2946,8 +3064,12 @@ return (
     await updateBillingInquiry(entryId, formData);
     setViewingEntry(null);
   }}
-  onUpdateBillsPayment={async (entryId, formData) => {
+onUpdateBillsPayment={async (entryId, formData) => {
     await updateBillsPayment(entryId, formData);
+    setViewingEntry(null);
+  }}
+  onUpdateOrderRequest={async (entryId, formData) => {
+    await updateOrderRequest(entryId, formData);
     setViewingEntry(null);
   }}
   onDelete={async (recordId) => {
