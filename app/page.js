@@ -4379,11 +4379,11 @@ const totalDeposited = filteredData.reduce((sum, r) => {
               const isEditing = editingRecon === e.id;
               const form = reconForm[e.id] || {};
               
-              return (
+return (
                 <div key={e.id} className={`p-4 rounded-xl border-2 ${e.status === 'Accounted' ? 'border-emerald-200 bg-emerald-50' : e.status === 'Rejected' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'} hover:shadow-md transition-all ${selectedRecords.includes(e.id) ? 'ring-2 ring-purple-500' : ''}`}>
                   <div className="flex justify-between items-start gap-4 mb-4">
                     <div className="flex items-start gap-3 flex-1">
-                      <button onClick={(ev) => { ev.stopPropagation(); toggleRecordSelection(e.id); }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-1 transition-all ${selectedRecords.includes(e.id) ? 'bg-purple-600 border-purple-600' : 'border-gray-300 hover:border-purple-400'}`}>
+                      <button onClick={(ev) => { ev.stopPropagation(); toggleRecordSelection(e.id); }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-1 transition-all ${selectedRecords.includes(e.id) ? 'bg-purple-600 border-purple-600' : 'border-gray-300 hover:border-purple-400'}`}>>
                         {selectedRecords.includes(e.id) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                       </button>
                       <div className="flex-1 cursor-pointer" onClick={() => setViewingEntry(e)}>
@@ -4396,7 +4396,7 @@ const totalDeposited = filteredData.reduce((sum, r) => {
                         </p>
                       </div>
                     </div>
-                          </div>
+
 {!isEditing && (
                       <div className="flex items-center gap-1" onClick={ev => ev.stopPropagation()}>
                         <button onClick={() => setViewingEntry(e)} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>
