@@ -4784,11 +4784,13 @@ return (
                       </button>
                       <div className="flex-1 cursor-pointer" onClick={() => setViewingEntry(e)}>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-gray-800">{e.recon_date}</p>
+                          <p className="font-bold text-blue-700">{e.locations?.name || 'Unknown Location'}</p>
+                          <span className="text-gray-400">•</span>
+                          <p className="font-semibold text-gray-800">{e.creator?.name || 'Unknown'}</p>
                           <StatusBadge status={e.status || 'Pending'} />
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {e.locations?.name} • {e.creator?.name || 'Unknown'} • {new Date(e.created_at).toLocaleDateString()}
+                        <p className="text-sm text-gray-500 mt-1">
+                          Recon Date: {e.recon_date} • Submitted: {new Date(e.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -4802,7 +4804,8 @@ return (
                     )}
                   </div>
 
-                  {/* Staff's Cash Can Data (Read Only) */}
+{/* Staff's Cash Can Data - Only show when Pending (not yet reviewed) */}
+                  {(e.status === 'Pending' || !e.status) && (
                   <div className="bg-white rounded-xl p-4 mb-3 border border-gray-200">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                       <DollarSign className="w-4 h-4 text-emerald-500" /> Staff Daily Reconciliation Entry
@@ -4819,6 +4822,7 @@ return (
                     </div>
                     {e.notes && <p className="mt-2 text-sm text-gray-600"><span className="text-gray-500">Notes:</span> {e.notes}</p>}
                   </div>
+                  )}
 
                   {/* Bank Deposit Section (Editable by Admin) */}
                   {isEditing ? (
@@ -4893,9 +4897,9 @@ return (
                       </div>
                     </div>
                   ) : (
-                    (e.deposit_cash > 0 || e.deposit_credit_card > 0 || e.deposit_checks > 0 || e.status === 'Accounted') && (
-                      <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                        <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+(e.status === 'Accounted' || e.status === 'Rejected') && (
+                      <div className={`rounded-xl p-4 border ${e.status === 'Rejected' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+                        <h4 className={`text-sm font-semibold mb-3 flex items-center gap-2 ${e.status === 'Rejected' ? 'text-red-700' : 'text-blue-700'}`}>
                           <Building2 className="w-4 h-4" /> Bank Deposit (Reviewed)
                         </h4>
                         <div className="grid grid-cols-4 gap-3 text-sm">
